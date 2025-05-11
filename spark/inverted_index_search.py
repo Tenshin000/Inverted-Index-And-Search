@@ -77,7 +77,7 @@ class InvertedIndexSearch:
         cleaned = re.sub(r"[\W_]+", " ", text.lower())
         return cleaned.split()
 
-
+"""
 def main():
     parser = argparse.ArgumentParser(description="Inverted Index and Search with Spark")
     subparsers = parser.add_subparsers(dest='command')
@@ -109,6 +109,29 @@ def main():
             print(filename)
     else:
         parser.print_help()
+"""
 
+if __name__ == "__main__":
+    # 2 required arguments: input_path and output_path
+    if len(sys.argv) != 3:
+        print("Usage: inverted_index.py <input_path> <output_path>")
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
+
+    # I normalize paths relative to the script directory
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    input_path  = os.path.normpath(os.path.join(base_dir, input_path))
+    output_path = os.path.normpath(os.path.join(base_dir, output_path))
+
+    engine = InvertedIndexSearch()
+    try:
+        engine.build_index(input_path, output_path)
+    finally:
+        engine.sc.stop()
+
+"""         
 if __name__ == '__main__':
     main()
+"""
