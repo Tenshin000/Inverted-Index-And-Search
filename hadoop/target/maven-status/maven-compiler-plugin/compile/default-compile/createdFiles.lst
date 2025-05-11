@@ -1,0 +1,3 @@
+com/example/hadoop/TokenizerMapper.class
+com/example/hadoop/InvertedIndexAndSearch.class
+com/example/hadoop/DocumentCountReducer.class
