@@ -1,137 +1,108 @@
 import argparse
 import os
 import sys
+import re
 from pyspark import SparkConf, SparkContext
 
 class InvertedIndexSearch:
     def __init__(self, app_name="InvertedIndexSearch"):
+        # Initialize SparkContext
         conf = SparkConf().setAppName(app_name)
-        # If running locally for testing, uncomment next line:
+        # Uncomment to run locally
         # conf = conf.setMaster("local[*]")
         self.sc = SparkContext(conf=conf)
-        self.index_rdd = None
+
+    @staticmethod
+    def _tokenize(text):
+        """
+        Simple tokenizer: convert to lowercase, remove punctuation, split on whitespace.
+        """
+        cleaned = re.sub(r"[\W_]+", " ", text.lower())
+        return cleaned.split()
 
     def build_index(self, input_path, output_path):
         """
-        Build inverted index from files at input_path, save to output_path.
-        Uses wholeTextFiles to capture filename with content.
-        Output format: word \t file1:count1, file2:count2, ...
+        Build inverted index from files at input_path and save to output_path.
+        Output format: word\tfile1:count1, file2:count2, ...
         """
+        # Reference tokenize function locally to avoid capturing self
+        tokenize = InvertedIndexSearch._tokenize
+
         # Read all files as (path, content)
         files_rdd = self.sc.wholeTextFiles(input_path)
 
-        # Extract (word, filename) pairs
-        pairs = files_rdd.flatMap(lambda fc: [((word, fc[0].split('/')[-1]), 1)
-                                              for word in self._tokenize(fc[1])])
+        # Create ((word, filename), 1) pairs
+        pairs = files_rdd.flatMap(lambda fc: [((word, os.path.basename(fc[0])), 1)
+                                              for word in tokenize(fc[1])])
 
-        # Count occurrences per (word, filename)
+        # Sum counts per (word, filename)
         counts = pairs.reduceByKey(lambda x, y: x + y)
 
-        # Transform to (word, (filename, count))
+        # Map to (word, (filename, count))
         word_file_counts = counts.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
 
         # Group by word
         grouped = word_file_counts.groupByKey()
 
-        # Format output strings
-        formatted = grouped.map(lambda wc: (wc[0], ", ".join([f"{fn}:{cnt}" for fn, cnt in sorted(wc[1])])))
+        # Format each line
+        formatted = grouped.map(lambda wc: f"{wc[0]}\t" + '\t'.join(f"{fn}:{cnt}" for fn, cnt in sorted(wc[1])))
 
-        # Save as text file
-        formatted.map(lambda wc: f"{wc[0]}\t{wc[1]}").saveAsTextFile(output_path)
+        # Save index
+        formatted.saveAsTextFile(output_path)
         print(f"Index saved to {output_path}")
 
     def load_index(self, index_path):
         """
-        Load inverted index from saved files into an in-memory dict: { word: set(filenames) }
+        Load inverted index from HDFS into a local dict: { word: [filenames] }
         """
         raw = self.sc.textFile(index_path)
-        # Each line: word\tfile1:cnt1, file2:cnt2,...
+        # Split lines into (word, file_list)
         pairs = raw.map(lambda line: line.split('\t', 1)).filter(lambda parts: len(parts) == 2)
+        # Extract filenames
         word_to_files = pairs.map(lambda wf: (wf[0], [fc.split(':')[0] for fc in wf[1].split(', ')]))
-        self.index_rdd = dict(word_to_files.collect())
+        self.index = dict(word_to_files.collect())
 
     def query(self, terms):
         """
-        Query the in-memory index for terms (list of words).
-        Returns list of filenames containing all terms.
+        Return sorted list of filenames containing all query terms.
         """
-        if self.index_rdd is None:
+        if not hasattr(self, 'index'):
             raise ValueError("Index not loaded. Call load_index() first.")
 
-        # Collect sets per term
-        sets = []
-        for term in terms:
-            files = set(self.index_rdd.get(term.lower(), []))
-            sets.append(files)
-
-        if not sets:
+        # Lowercase terms
+        term_sets = [set(self.index.get(t.lower(), [])) for t in terms]
+        if not term_sets:
             return []
-        # Intersect sets
-        result = set.intersection(*sets)
+
+        # Intersect all sets
+        result = set.intersection(*term_sets)
         return sorted(result)
 
-    @staticmethod
-    def _tokenize(text):
-        # Simple tokenizer: lowercase, remove punctuation, split on whitespace
-        import re
-        cleaned = re.sub(r"[\W_]+", " ", text.lower())
-        return cleaned.split()
 
-"""
 def main():
-    parser = argparse.ArgumentParser(description="Inverted Index and Search with Spark")
-    subparsers = parser.add_subparsers(dest='command')
-
-    # Build index command
-    build_parser = subparsers.add_parser('index', help='Build the inverted index')
-    build_parser.add_argument('input_path', help='Input directory or file path')
-    build_parser.add_argument('output_path', help='Output directory for index')
-
-    # Query command
-    query_parser = subparsers.add_parser('search', help='Search the inverted index')
-    query_parser.add_argument('index_path', help='Path to saved index files (directory)')
-    query_parser.add_argument('terms', nargs='+', help='Search terms')
-
+    parser = argparse.ArgumentParser(description="Inverted Index with Spark and HDFS support")
+    parser.add_argument('inputs', nargs='+', help='Input file(s) or directory names (relative)')
+    parser.add_argument('output', help='Output directory name (relative)')
     args = parser.parse_args()
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    args.input_path  = os.path.normpath(os.path.join(base_dir,  args.input_path))
-    args.output_path = os.path.normpath(os.path.join(base_dir,  args.output_path))
+    if len(args.inputs) < 1:
+        parser.error('At least one input must be specified')
 
-    if args.command == 'index':
-        engine = InvertedIndexSearch()
-        engine.build_index(args.input_path, args.output_path)
-    elif args.command == 'search':
-        engine = InvertedIndexSearch()
-        engine.load_index(args.index_path)
-        results = engine.query(args.terms)
-        for filename in results:
-            print(filename)
-    else:
-        parser.print_help()
-"""
+    # HDFS absolute prefix
+    hdfs_base = 'hdfs://hadoop-namenode:9820/user/hadoop/'
 
-if __name__ == "__main__":
-    # 2 required arguments: input_path and output_path
-    if len(sys.argv) != 3:
-        print("Usage: inverted_index.py <input_path> <output_path>")
-        sys.exit(1)
+    # Build full HDFS paths
+    input_paths = [hdfs_base + inp.strip('/') for inp in args.inputs]
+    input_str = ','.join(input_paths)
+    output_path = hdfs_base + args.output.strip('/')
 
-    input_path = sys.argv[1]
-    output_path = sys.argv[2]
-
-    # I normalize paths relative to the script directory
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    input_path  = os.path.normpath(os.path.join(base_dir, input_path))
-    output_path = os.path.normpath(os.path.join(base_dir, output_path))
-
+    # Run index build
     engine = InvertedIndexSearch()
     try:
-        engine.build_index(input_path, output_path)
+        engine.build_index(input_str, output_path)
     finally:
         engine.sc.stop()
 
-"""         
+
 if __name__ == '__main__':
     main()
-"""
