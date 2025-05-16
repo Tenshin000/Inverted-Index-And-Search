@@ -1,98 +1,112 @@
 import argparse
 import os
 import re
-from pyspark import SparkConf, SparkContext
+import sys
+import subprocess
+from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import input_file_name
 
+# Define HDFS paths
+HDFS_BASE = 'hdfs://user/hadoop/'
+DATA_DIR = HDFS_BASE + 'inverted-index/data'
+OUTPUT_BASE = HDFS_BASE + 'inverted-index/'
+
+# Add project root to PYTHONPATH to import script module
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+sys.path.insert(0, PROJECT_ROOT)
+
 class InvertedIndexSearch:
     def __init__(self, app_name="InvertedIndexSearch"):
-        # Initialize SparkSession and SparkContext
         conf = SparkConf().setAppName(app_name)
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
 
-    # Precompile regex pattern for tokenization
     _token_pattern = re.compile(r"[\W_]+")
-
     @staticmethod
     def tokenize(text):
-        # Clean and split text into words
         return InvertedIndexSearch._token_pattern.sub(" ", text.lower()).split()
 
     def build_index(self, input_paths, output_path, num_partitions=None):
-        # Read text files in a distributed manner
         df = self.spark.read.text(input_paths)
-        # Add filename column
-        df = df.withColumn("filename", input_file_name())
-
-        # Convert DataFrame to RDD of (filename, line_text)
-        rdd = df.rdd.map(lambda row: (os.path.basename(row.filename), row.value))
-
-        # Local reference to tokenize
+        df = df.withColumn('filename', input_file_name())
+        rdd = df.rdd.map(lambda r: (os.path.basename(r.filename), r.value))
         tokenize = InvertedIndexSearch.tokenize
-
-        # Create ((word, filename), 1) pairs
-        pairs = rdd.flatMap(lambda fn_text: [((word, fn_text[0]), 1) for word in tokenize(fn_text[1])])
-
-        # Aggregate counts per (word, filename)
-        counts = pairs.reduceByKey(lambda x, y: x + y)
-
-        # Prepare (word, (filename, count)) pairs
-        word_file_counts = counts.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
-
-        # Combine per word into a dict of {filename: count}
-        def seq_op(acc, fv):
-            fn, cnt = fv
-            acc.setdefault(fn, 0)
-            acc[fn] += cnt
-            return acc
+        pairs = rdd.flatMap(lambda ft: [((w, ft[0]), 1) for w in tokenize(ft[1])])
+        counts = pairs.reduceByKey(lambda a, b: a + b)
+        word_file = counts.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
+        def seq_op(acc, fv): acc.setdefault(fv[0], 0); acc[fv[0]] += fv[1]; return acc
         def comb_op(a, b):
-            for fn, cnt in b.items():
-                a.setdefault(fn, 0)
-                a[fn] += cnt
+            for fn, c in b.items(): a.setdefault(fn, 0); a[fn] += c
             return a
+        index = word_file.combineByKey(lambda fv: {fv[0]: fv[1]}, seq_op, comb_op)
+        formatted = index.map(lambda kv: f"{kv[0]}\t" + ", ".join(f"{fn}:{cnt}" for fn, cnt in sorted(kv[1].items())))
+        parts = num_partitions or self.sc.defaultParallelism
+        formatted.repartition(parts).saveAsTextFile(output_path)
 
-        index_dicts = word_file_counts.combineByKey(
-            lambda fv: {fv[0]: fv[1]},
-            seq_op,
-            comb_op
-        )
+    def stop(self): self.sc.stop()
 
-        # Format postings lists
-        formatted = index_dicts.map(
-            lambda kv: f"{kv[0]}\t" + ", ".join(f"{fn}:{cnt}" for fn, cnt in sorted(kv[1].items()))
-        )
+# HDFS utility functions
 
-        # Repartition output based on provided or default parallelism
-        partitions = num_partitions or self.sc.defaultParallelism
-        formatted = formatted.repartition(partitions)
-        formatted.saveAsTextFile(output_path)
-        print(f"Optimized index saved to {output_path}")
+def hdfs_dir_exists(path):
+    return subprocess.run(['hdfs', 'dfs', '-test', '-d', path]).returncode == 0
 
-    def stop(self):
-        self.sc.stop()
+
+def list_hdfs_files(path):
+    proc = subprocess.run(['hdfs', 'dfs', '-ls', path], capture_output=True, text=True, check=True)
+    files = []
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 8 and parts[0].startswith('-'):
+            size = int(parts[4]); p = parts[7]
+            files.append((p, size))
+    return files
+
+
+def choose_input_paths(limit_mb=None):
+    if not hdfs_dir_exists(DATA_DIR):
+        print("The hdfs://user/hadoop/inverted-index/data not exists. You have to generate it first.")
+        return ""
+    files = list_hdfs_files(DATA_DIR)
+    if limit_mb is None:
+        return [DATA_DIR + '/*']
+    mb = limit_mb * 1024 * 1024
+    selected, total = [], 0
+    for p, sz in sorted(files, key=lambda x: x[1]):
+        if total + sz > mb: break
+        selected.append(p); total += sz
+    return selected
+
+
+def choose_output_path():
+    base = OUTPUT_BASE + 'output'
+    idx = ''
+    while hdfs_dir_exists(base + idx):
+        idx = str(int(idx or '0') + 1)
+    return base + idx
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Optimized Inverted Index with Spark and HDFS support")
-    parser.add_argument('inputs', nargs='+', help='Input file(s) or directory names (relative)')
-    parser.add_argument('output', help='Output directory name (relative)')
-    parser.add_argument('--num-partitions', type=int, help='Number of output partitions/reducers')
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num-partitions', type=int)
+    known, unknown = parser.parse_known_args()
+    # Parse limit flag --<N>MB
+    limit = None
+    for arg in unknown:
+        m = re.match(r'--(\d+)MB$', arg)
+        if m: limit = int(m.group(1)); break
 
-    # HDFS absolute prefix
-    hdfs_base = 'hdfs://hadoop-namenode:9820/user/hadoop/'
-
-    # Build full HDFS paths as list
-    input_paths = [hdfs_base + inp.strip('/') for inp in args.inputs]
-    output_path = hdfs_base + args.output.strip('/')
+    input_paths = choose_input_paths(limit)
+    if(input_paths == ""):
+        return
+    output_path = choose_output_path()
 
     engine = InvertedIndexSearch()
     try:
-        engine.build_index(input_paths, output_path, num_partitions=args.num_partitions)
+        engine.build_index(input_paths, output_path, num_partitions=known.num_partitions)
+        print(f"Index saved to {output_path}")
     finally:
         engine.stop()
 
-if __name__ == '__main__':
+if __name__ == '__main__': 
     main()
