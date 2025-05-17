@@ -8,13 +8,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import input_file_name
 
 # Define HDFS paths
-HDFS_BASE = 'hdfs://user/hadoop/'
+HDFS_BASE = 'hdfs:///user/hadoop/'
 DATA_DIR = HDFS_BASE + 'inverted-index/data'
 OUTPUT_BASE = HDFS_BASE + 'inverted-index/'
-
-# Add project root to PYTHONPATH to import script module
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-sys.path.insert(0, PROJECT_ROOT)
 
 class InvertedIndexSearch:
     def __init__(self, app_name="InvertedIndexSearch"):
@@ -23,6 +19,7 @@ class InvertedIndexSearch:
         self.sc = self.spark.sparkContext
 
     _token_pattern = re.compile(r"[\W_]+")
+
     @staticmethod
     def tokenize(text):
         return InvertedIndexSearch._token_pattern.sub(" ", text.lower()).split()
@@ -47,7 +44,6 @@ class InvertedIndexSearch:
     def stop(self): self.sc.stop()
 
 # HDFS utility functions
-
 def hdfs_dir_exists(path):
     return subprocess.run(['hdfs', 'dfs', '-test', '-d', path]).returncode == 0
 

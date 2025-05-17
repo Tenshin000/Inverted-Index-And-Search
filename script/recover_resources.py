@@ -11,7 +11,7 @@ import shutil
 # Configuration
 BASE_URL = "ftp.blogpanattoni.altervista.org"
 FOLDER_NAME = "resources"
-OUTPUT_DIR = "hdfs://user/hadoop/inverted-index/data"  # or "data" for local test
+OUTPUT_DIR = "hdfs:///user/hadoop/inverted-index/data"  # or "data" for local test
 FTP_USER = "blogpanattoni"
 
 
