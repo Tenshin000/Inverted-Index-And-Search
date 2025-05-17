@@ -72,7 +72,6 @@ def choose_input_paths(limit_mb=None):
     appending an index if needed to avoid collisions.
 """
 def choose_output_path():
-
     base = OUTPUT_BASE + 'output'
     idx = ''
     while hdfs_dir_exists(base + idx):
