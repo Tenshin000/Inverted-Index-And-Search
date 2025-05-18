@@ -1,8 +1,6 @@
 import argparse
-import os
 import re
 import sys
-import subprocess
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
@@ -12,7 +10,9 @@ from pyspark.sql.functions import (
     split,
     explode,
     col,
-    count as sql_count
+    count as sql_count,
+    collect_list,
+    concat_ws
 )
 
 #----------------------------#
@@ -21,60 +21,51 @@ from pyspark.sql.functions import (
 HDFS_BASE   = 'hdfs:///user/hadoop/'
 DATA_DIR    = HDFS_BASE + 'inverted-index/data'
 OUTPUT_BASE = HDFS_BASE + 'inverted-index/'
-DEFAULT_SHUFFLE_PARTITIONS = 48 # Default number of shuffle partitions
-# Set to 48 to handle expensive shuffles. 
-# The value was chosen based on the cluster configuration (3 nodes, each with 8 vCPUs and 1 active container), 
-# for an estimated total of about 24 contention-free parallel tasks.
-# Increasing to 48 allows for better load balancing and reduces the risk of data distribution imbalances between partitions.
+DEFAULT_SHUFFLE_PARTITIONS = 48
 
 #----------------------------#
 #   HDFS UTILITY FUNCTIONS   #
 #----------------------------#
-"""Check if an HDFS directory exists."""
-def hdfs_dir_exists(path):
-    return subprocess.run(['hdfs', 'dfs', '-test', '-d', path]).returncode == 0
+def hdfs_dir_exists(spark_context, path):
+    """Check if an HDFS path exists using Hadoop API."""
+    jvm = spark_context._jvm
+    hadoop_conf = spark_context._jsc.hadoopConfiguration()
+    fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
+    return fs.exists(jvm.org.apache.hadoop.fs.Path(path))
 
-"""List all files (with sizes) under an HDFS directory."""
-def list_hdfs_files(path):
-    proc = subprocess.run(
-        ['hdfs', 'dfs', '-ls', path],
-        capture_output=True, text=True, check=True
-    )
+def list_hdfs_files(spark_context, path):
+    """Return list of (path, size) tuples for files in HDFS directory."""
+    jvm = spark_context._jvm
+    hadoop_conf = spark_context._jsc.hadoopConfiguration()
+    fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
+    p = jvm.org.apache.hadoop.fs.Path(path)
     files = []
-    for line in proc.stdout.splitlines():
-        parts = line.split()
-        if len(parts) >= 8 and parts[0].startswith('-'):
-            size = int(parts[4]); p = parts[7]
-            files.append((p, size))
+    if fs.exists(p):
+        for f in fs.listStatus(p):
+            if f.isFile():
+                files.append((f.getPath().toString(), f.getLen()))
     return files
 
-"""
-    Select input files up to a size limit (in MB), or all files if no limit.
-    Returns a list of HDFS paths.
-"""
-def choose_input_paths(limit_mb=None):
-    if not hdfs_dir_exists(DATA_DIR):
-        print(f"Data directory {DATA_DIR} does not exist. Generate input data first.")
+def choose_input_paths(sc, limit_mb=None):
+    if not hdfs_dir_exists(sc, DATA_DIR):
+        print(f"Data directory {DATA_DIR} does not exist.")
         return []
     if limit_mb is None:
         return [DATA_DIR + '/*']
     mb = limit_mb * 1024 * 1024
+    files = list_hdfs_files(sc, DATA_DIR)
     selected, total = [], 0
-    for p, sz in sorted(list_hdfs_files(DATA_DIR), key=lambda x: x[1]):
+    for p, sz in sorted(files, key=lambda x: x[1]):
         if total + sz > mb:
             break
         selected.append(p)
         total += sz
     return selected
 
-"""
-    Generate a new output path under OUTPUT_BASE/output, 
-    appending an index if needed to avoid collisions.
-"""
-def choose_output_path():
+def choose_output_path(sc):
     base = OUTPUT_BASE + 'output'
     idx = ''
-    while hdfs_dir_exists(base + idx):
+    while hdfs_dir_exists(sc, base + idx):
         idx = str(int(idx or '0') + 1)
     return base + idx
 
@@ -83,51 +74,45 @@ def choose_output_path():
 #----------------------------#
 class InvertedIndexSearch:
     def __init__(self, app_name="InvertedIndexSearch"):
-        # Configure Spark with tuned shuffle partitions
-        conf = SparkConf() \
-            .setAppName(app_name) \
-            .set("spark.sql.shuffle.partitions", str(DEFAULT_SHUFFLE_PARTITIONS))
+        conf = SparkConf().setAppName(app_name).set("spark.sql.shuffle.partitions", str(DEFAULT_SHUFFLE_PARTITIONS))
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
 
     def build_index(self, input_paths, output_path, num_partitions=None):
-        # Read text files and tag each row with its filename
+        # Read files with filename column
         df = (self.spark
               .read
               .text(input_paths)
-              .withColumn("filename", input_file_name()))
+              .withColumn("filename", regexp_replace(input_file_name(), r"hdfs://[^/]+/user/hadoop/inverted-index/data/", "")))
 
-        # Tokenize using DataFrame API (lowercase, regex replace, split, explode)
+        # Tokenize and clean text
         tokens = (df
-                  .withColumn("clean", lower(regexp_replace(col("value"), "[\\W_]+", " ")))
-                  .withColumn("word", explode(split(col("clean"), "\\s+")))
-                  .filter(col("word") != ""))
+                    .withColumn("clean", lower(regexp_replace(col("value"), "[\\W_]+", " ")))
+                    .withColumn("word", explode(split(col("clean"), "\\s+")))
+                    .filter(col("word") != "")
+                    .groupBy("word", "filename")
+                    .agg(sql_count("*").alias("cnt")))
 
-        # Count occurrences per (word, filename)
+        # Count word occurrences per file
         counts = (tokens
                   .groupBy("word", "filename")
                   .agg(sql_count("*").alias("cnt")))
 
-        # Build inverted index by grouping filename:count entries for each word
-        # We do a double group: first count, then reassemble strings in RDD for final formatting
-        inverted = (counts
-                    .select("word", "filename", "cnt")
-                    .orderBy("word", "filename"))
+        # Create postings list and format output
+        postings = (counts
+                    .groupBy("word")
+                    .agg(collect_list(concat_ws(":", col("filename"), col("cnt"))).alias("file_counts"))
+                    .select(col("word"), concat_ws("\t", col("file_counts")).alias("postings")))
 
-        # Format each line as: word \t file1:count \t file2:count ...
-        formatted = (inverted
-                     .rdd
-                     .map(lambda r: f"{r.word}\t{r.filename}:{r.cnt}")
-                     .groupBy(lambda s: s.split("\t")[0])
-                     .map(lambda kv: kv[0] + "\t" + "\t".join(
-                         [e.split("\t",1)[1] for e in sorted(kv[1])]
-                     )))
+        # Format to final output lines
+        formatted = postings \
+            .orderBy("word") \
+            .rdd \
+            .map(lambda r: f"{r.word}\t{r.postings}")
 
-        # Repartition and save to HDFS
-        parts = num_partitions or self.sc.defaultParallelism
-        formatted \
-            .repartition(parts) \
-            .saveAsTextFile(output_path)
+        # Write output
+        partitions = num_partitions or self.sc.defaultParallelism
+        formatted.repartition(partitions).saveAsTextFile(output_path)
 
     def stop(self):
         self.sc.stop()
@@ -140,7 +125,7 @@ def main():
     parser.add_argument('--num-partitions', type=int, help="Override number of output partitions")
     known, unknown = parser.parse_known_args()
 
-    # Parse optional limit flag of the form --<N>MB
+    # Parse optional --<N>MB flag
     limit = None
     for arg in unknown:
         m = re.match(r'--(\d+)MB$', arg)
@@ -148,13 +133,12 @@ def main():
             limit = int(m.group(1))
             break
 
-    inputs = choose_input_paths(limit)
-    if not inputs:
-        sys.exit(1)
-
-    output_path = choose_output_path()
     engine = InvertedIndexSearch()
     try:
+        inputs = choose_input_paths(engine.sc, limit)
+        if not inputs:
+            sys.exit(1)
+        output_path = choose_output_path(engine.sc)
         engine.build_index(inputs, output_path, num_partitions=known.num_partitions)
         print(f"Index saved to {output_path}")
     finally:
