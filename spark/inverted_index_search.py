@@ -79,40 +79,51 @@ class InvertedIndexSearch:
         self.sc = self.spark.sparkContext
 
     def build_index(self, input_paths, output_path, num_partitions=None):
+        """PHASE 1: MAP - Tokenization and Preprocessing"""
         # Read files with filename column
         df = (self.spark
-              .read
-              .text(input_paths)
+              .read 
+              .text(input_paths) # Read all text files from input_paths
               .withColumn("filename", regexp_replace(input_file_name(), r"hdfs://[^/]+/user/hadoop/inverted-index/data/", "")))
+            # withColumn adds filename column removing HDFS prefix, so only filename remains.
 
         # Tokenize and clean text
         tokens = (df
-                    .withColumn("clean", lower(regexp_replace(col("value"), "[\\W_]+", " ")))
+                  # Replaces everything that is not a letter or number with spaces and converts it to lowercase
+                    .withColumn("clean", lower(regexp_replace(col("value"), "[\\W_]+", " "))) 
+                  # Transform each row into many records, one per word
                     .withColumn("word", explode(split(col("clean"), "\\s+")))
-                    .filter(col("word") != "")
-                    .groupBy("word", "filename")
-                    .agg(sql_count("*").alias("cnt")))
-
+                  # filter removes any empty strings
+                    .filter(col("word") != ""))
+        
+        """PHASE 2: REDUCE - Occurrence counting"""
         # Count word occurrences per file
         counts = (tokens
                   .groupBy("word", "filename")
                   .agg(sql_count("*").alias("cnt")))
 
+        """FASE 3: MAP - postings list"""
         # Create postings list and format output
         postings = (counts
                     .groupBy("word")
+                    # For each word, it collects all the "filename:count" strings into a list
                     .agg(collect_list(concat_ws(":", col("filename"), col("cnt"))).alias("file_counts"))
+                    # Concatenate them with tabs between them, obtaining the list of documents and counts
                     .select(col("word"), concat_ws("\t", col("file_counts")).alias("postings")))
 
+        """PHASE 4: REDUCE - Final formatting and sorting"""
         # Format to final output lines
         formatted = postings \
             .orderBy("word") \
             .rdd \
             .map(lambda r: f"{r.word}\t{r.postings}")
+        # Sort words alphabetically.
+        # Go from DataFrame to RDD 
+        # Map each record to a tab-delimited string.
 
         # Write output
-        partitions = num_partitions or self.sc.defaultParallelism
-        formatted.repartition(partitions).saveAsTextFile(output_path)
+        partitions = num_partitions or self.sc.defaultParallelism # Repartition according to the chosen number of partitions
+        formatted.repartition(partitions).saveAsTextFile(output_path) # Save to HDFS in output_path
 
     def stop(self):
         self.sc.stop()
