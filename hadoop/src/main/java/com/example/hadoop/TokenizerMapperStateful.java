@@ -15,7 +15,7 @@ import java.io.IOException;
 // INPUT (key: offset, value: doc)
 // OUTPUT (key: word, value: doc1:count, doc2:count, ...)
 
-public class TokenizerMapper extends Mapper<LongWritable, Text, Text, Text> {
+public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Text> {
 
 // class used to implement internal combining
     public class WordOccurrences {
