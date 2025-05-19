@@ -106,7 +106,7 @@ class InvertedIndexSearch:
                   .groupBy("word", "filename")
                   .agg(sql_count("*").alias("cnt")))
 
-        """FASE 3: MAP - postings list"""
+        """FASE 3: REDUCE - postings list"""
         # Create postings list and format output
         postings = (counts
                     .groupBy("word")
@@ -115,7 +115,10 @@ class InvertedIndexSearch:
                     # Concatenate them with tabs between them, obtaining the list of documents and counts
                     .select(col("word"), concat_ws("\t", col("file_counts")).alias("postings")))
 
-        """PHASE 4: REDUCE - Final formatting and sorting"""
+        """PHASE 4: MAP/REDUCE - Final formatting and sorting"""
+        # - MAP: rdd.map(lambda r: …) turns each record into a string
+        # - SORT SHUFFLE: orderBy("word") causes a shuffle for distributed sorting
+        
         # Format to final output lines
         formatted = postings \
             .orderBy("word") \
