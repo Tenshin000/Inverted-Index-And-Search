@@ -22,6 +22,10 @@ HDFS_BASE   = 'hdfs:///user/hadoop/'
 DATA_DIR    = HDFS_BASE + 'inverted-index/data'
 OUTPUT_BASE = HDFS_BASE + 'inverted-index/'
 DEFAULT_SHUFFLE_PARTITIONS = 48
+# Set to 48 to handle expensive shuffles. 
+# The value was chosen based on the cluster configuration (3 nodes, each with 8 vCPUs and 1 active container), 
+# for an estimated total of about 24 contention-free parallel tasks.
+# Increasing to 48 allows for better load balancing and reduces the risk of data distribution imbalances between partitions.
 
 #----------------------------#
 #   HDFS UTILITY FUNCTIONS   #
