@@ -71,7 +71,7 @@ public class TokenizerMapper extends Mapper<LongWritable, Text, Text, Text> {
         }
     }
 
-// The output is sent only one time, during the cleanup method
+// First solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 ... docN:countN>
     @Override
     public void cleanup(Context context) throws IOException, InterruptedException {
         for (WordOccurrences occ : wordCounts.values()) {
@@ -85,4 +85,16 @@ public class TokenizerMapper extends Mapper<LongWritable, Text, Text, Text> {
             context.write(new Text(occ.getWord()), new Text(valueBuilder.toString()));
         }
     }
+
+// Second solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 > ... <word, docN:countN>
+/*
+    @Override
+    public void cleanup(Context context) throws IOException, InterruptedException {
+        for (WordOccurrences occ : wordCounts.values()) {
+            for (Map.Entry<String, Integer> entry : occ.getDocCounts().entrySet()) {
+                context.write(new Text(occ.getWord()), new Text(entry.getKey() + ":" + entry.getValue()));
+            }
+        }
+    }
+*/
 }
