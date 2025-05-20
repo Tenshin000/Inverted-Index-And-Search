@@ -102,7 +102,7 @@ class InvertedIndexSearch:
             .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
         )
 
-        """PHASE 4: FORMAT OUTPUT""" 
+        """PHASE 3: FORMAT OUTPUT""" 
         # Format to final output lines
         formatted = postings.select(
             concat_ws('\t', col('word'), concat_ws('\t', col('postings_list')))
