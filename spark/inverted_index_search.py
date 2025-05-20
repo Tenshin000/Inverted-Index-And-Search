@@ -3,17 +3,7 @@ import re
 import sys
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    input_file_name,
-    lower,
-    regexp_replace,
-    split,
-    explode,
-    col,
-    count as sql_count,
-    collect_list,
-    concat_ws
-)
+from pyspark.sql.functions import input_file_name, explode, split, lower, regexp_replace, col, concat_ws, collect_list, concat, lit, sort_array
 
 #----------------------------#
 #        CONFIGURATION       #
@@ -21,11 +11,6 @@ from pyspark.sql.functions import (
 HDFS_BASE   = 'hdfs:///user/hadoop/'
 DATA_DIR    = HDFS_BASE + 'inverted-index/data'
 OUTPUT_BASE = HDFS_BASE + 'inverted-index/'
-DEFAULT_SHUFFLE_PARTITIONS = 48
-# Set to 48 to handle expensive shuffles. 
-# The value was chosen based on the cluster configuration (3 nodes, each with 8 vCPUs and 1 active container), 
-# for an estimated total of about 24 contention-free parallel tasks.
-# Increasing to 48 allows for better load balancing and reduces the risk of data distribution imbalances between partitions.
 
 #----------------------------#
 #   HDFS UTILITY FUNCTIONS   #
@@ -78,7 +63,10 @@ def choose_output_path(sc):
 #----------------------------#
 class InvertedIndexSearch:
     def __init__(self, app_name="InvertedIndexSearch"):
-        conf = SparkConf().setAppName(app_name).set("spark.sql.shuffle.partitions", str(DEFAULT_SHUFFLE_PARTITIONS))
+        conf = SparkConf() \
+            .setAppName(app_name) \
+            .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+            .set("spark.kryoserializer.buffer.max", "512m")
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
 
@@ -91,49 +79,40 @@ class InvertedIndexSearch:
               .withColumn("filename", regexp_replace(input_file_name(), r"hdfs://[^/]+/user/hadoop/inverted-index/data/", "")))
             # withColumn adds filename column removing HDFS prefix, so only filename remains.
 
-        # Tokenize and clean text
-        tokens = (df
-                  # Replaces everything that is not a letter or number with spaces and converts it to lowercase
-                    .withColumn("clean", lower(regexp_replace(col("value"), "[\\W_]+", " "))) 
-                  # Transform each row into many records, one per word
-                    .withColumn("word", explode(split(col("clean"), "\\s+")))
-                  # filter removes any empty strings
-                    .filter(col("word") != ""))
+        # Replaces everything that is not a letter or number with spaces and converts it to lowercase
+        # Transform each row into many records, one per word
+        # filter removes any empty strings
+        tokens = df.withColumn('word', explode(split(lower(regexp_replace(col('value'), r'[^a-z0-9]', ' ')), '\\s+'))).filter(col('word') != '')
         
-        """PHASE 2: REDUCE - Occurrence counting"""
+        # Optionally repartition by word for controlled parallelism
+        if num_partitions:
+            tokens = tokens.repartition(num_partitions, col('word'))
+
+        """PHASE 2: REDUCE - Occurrence counting and Postings List"""
         # Count word occurrences per file
-        counts = (tokens
-                  .groupBy("word", "filename")
-                  .agg(sql_count("*").alias("cnt")))
+        counts = tokens.groupBy('word', 'filename').count()
 
-        """FASE 3: REDUCE - postings list"""
         # Create postings list and format output
-        postings = (counts
-                    .groupBy("word")
-                    # For each word, it collects all the "filename:count" strings into a list
-                    .agg(collect_list(concat_ws(":", col("filename"), col("cnt"))).alias("file_counts"))
-                    # Concatenate them with tabs between them, obtaining the list of documents and counts
-                    .select(col("word"), concat_ws("\t", col("file_counts")).alias("postings")))
+        postings = (
+            counts.select(
+                col('word'),
+                concat(col('filename'), lit(':'), col('count')).alias('posting')
+            )
+            .groupBy('word')
+            .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
+        )
 
-        """PHASE 4: MAP/REDUCE - Final formatting and sorting"""
-        # - MAP: rdd.map(lambda r: …) turns each record into a string
-        # - SORT SHUFFLE: orderBy("word") causes a shuffle for distributed sorting
-        
+        """PHASE 4: FORMAT OUTPUT""" 
         # Format to final output lines
-        formatted = postings \
-            .orderBy("word") \
-            .rdd \
-            .map(lambda r: f"{r.word}\t{r.postings}")
-        # Sort words alphabetically.
-        # Go from DataFrame to RDD 
-        # Map each record to a tab-delimited string.
+        formatted = postings.select(
+            concat_ws('\t', col('word'), concat_ws('\t', col('postings_list')))
+        )
 
         # Write output
-        partitions = num_partitions or self.sc.defaultParallelism # Repartition according to the chosen number of partitions
-        formatted.repartition(partitions).saveAsTextFile(output_path) # Save to HDFS in output_path
+        formatted.write.text(output_path)
 
     def stop(self):
-        self.sc.stop()
+        self.spark.stop()
 
 #----------------------------#
 #            MAIN            #
