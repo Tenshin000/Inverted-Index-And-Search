@@ -82,7 +82,7 @@ class InvertedIndexSearch:
         # Replaces everything that is not a letter or number with spaces and converts it to lowercase
         # Transform each row into many records, one per word
         # filter removes any empty strings
-        tokens = df.withColumn('word', explode(split(lower(regexp_replace(col('value'), r'[^a-z0-9]', ' ')), '\\s+'))).filter(col('word') != '')
+        tokens = df.withColumn('word', explode(split(lower(regexp_replace(col('value'), r'[^A-Za-z0-9]', ' ')), '\\s+'))).filter(col('word') != '')
         
         # Optionally repartition by word for controlled parallelism
         if num_partitions:
