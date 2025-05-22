@@ -8,7 +8,7 @@ def search_inverted_index(query, index_dir):
     if not query_terms:
         return ["Error: Empty query."]
 
-    term_to_files = {term: set() for term in query_terms} # it creates a terms associated with its filesname (empty set)
+    term_to_files = {term: set() for term in query_terms} # it creates a term associated with its filesname (empty set)
     for filepath in glob.glob(os.path.join(index_dir, "part-*")): # This assumes the inverted index is split across multiple files (common in Hadoop or Spark).
         with open(filepath, 'r', encoding='utf-8') as f: 
             for line in f:
