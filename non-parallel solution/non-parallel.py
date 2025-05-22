@@ -1,9 +1,9 @@
-import os
-import re
-from collections import defaultdict
+import os # for file handling
+import re # regular expressions
+from collections import defaultdict # data structure
 import time
 import psutil  # For memory usage tracking
-import sys
+import sys # system infos
 
 def build_inverted_index(input_dir):
     # Track execution time and memory
