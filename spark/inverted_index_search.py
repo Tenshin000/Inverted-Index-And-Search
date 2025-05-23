@@ -1,8 +1,6 @@
 import argparse
 import logging
 import os
-import psutil
-import requests
 import sys
 import time
 from pyspark import SparkConf
@@ -13,10 +11,10 @@ from pyspark.sql.types import StringType
 #----------------------------#
 #        CONFIGURATION       #
 #----------------------------#
-HDFS_BASE    = 'hdfs:///user/hadoop/'
-DATA_DIR     = HDFS_BASE + 'inverted-index/data'
-OUTPUT_BASE  = HDFS_BASE + 'inverted-index/output/'
-LOG_DIR      = HDFS_BASE + 'inverted-index/log/'
+HDFS_BASE                 = 'hdfs:///user/hadoop/'
+DATA_DIR                  = HDFS_BASE + 'inverted-index/data'
+OUTPUT_BASE               = HDFS_BASE + 'inverted-index/output/'
+LOG_DIR                   = HDFS_BASE + 'inverted-index/log/'
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,57 +46,67 @@ def list_hdfs_files(sc, path):
                 files.append((status.getPath().toString(), status.getLen()))
     return files
 
-def choose_input_paths(sc, limit_mb=None):
-    """Select input files up to limit_mb (if specified), else all."""
-    if not hdfs_dir_exists(sc, DATA_DIR):
-        raise HDFSPathNotFoundError(f"Data directory '{DATA_DIR}' does not exist.")
+def choose_input_paths(sc, limit_mb=None, base_dir=DATA_DIR):
+    """Efficiently select HDFS input files up to limit_mb, or all if None."""
+    if not hdfs_dir_exists(sc, base_dir):
+        raise HDFSPathNotFoundError(f"Data directory '{base_dir}' does not exist.")
+
     if limit_mb is None:
-        return [DATA_DIR + '/*']
+        return [f"{base_dir.rstrip('/')}/"]
+
     mb_bytes = limit_mb * 1024 * 1024
-    files = sorted(list_hdfs_files(sc, DATA_DIR), key=lambda x: x[1])
-    selected, total = [], 0
+
+    # List all files once, sort by descending size to fill the limit faster
+    files = sorted(list_hdfs_files(sc, base_dir), key=lambda x: -x[1])
+
+    selected = []
+    total = 0
+
     for path, size in files:
+        if total + size <= mb_bytes:
+            selected.append(path)
+            total += size
+        else:
+            continue  # try next smaller file
+
+    # If nothing fits (i.e. all files are larger), fall back to smallest-only
+    if not selected and files:
+        smallest_file = min(files, key=lambda x: x[1])
+        selected = [smallest_file[0]]
+
+    return selected
+
+def choose_output_path(sc):
+    """Pick a new output directory of form output-sparkX where X increments, in default HDFS."""
+    idx = 0
+    while hdfs_dir_exists(sc, OUTPUT_BASE + f'output-spark{idx}'):
+        idx += 1
+    return OUTPUT_BASE + f'output-spark{idx}'
+
+#----------------------------#
+#   LOCAL UTILITY FUNCTIONS  #
+#----------------------------#
+def list_local_txt_files(folder):
+    """Recursively list all .txt files under a local folder."""
+    paths = []
+    for root, dirs, files in os.walk(folder):
+        for f in files:
+            if f.lower().endswith('.txt'):
+                paths.append(os.path.join(root, f))
+    return paths
+
+def choose_local_input_paths(paths, limit_mb):
+    """Select local files up to limit_mb total size (in MB)."""
+    mb_bytes = limit_mb * 1024 * 1024
+    selected, total = [], 0
+    for path in sorted(paths, key=lambda p: os.path.getsize(p)):
+        size = os.path.getsize(path)
         if total + size > mb_bytes:
             break
         selected.append(path)
         total += size
     return selected
-
-def choose_output_path(sc):
-    """Pick a new output directory of form output-sparkX where X increments."""
-    idx = 0
-    while hdfs_dir_exists(sc, OUTPUT_BASE + f'output-spark{idx}'):
-        idx += 1
-    return OUTPUT_BASE + f'output-spark{idx}', idx
-
-def write_log_to_hdfs(sc, idx, execution_time, phys_mb, virt_mb):
-    """
-    Write a single-line CSV log into HDFS at log/log{idx}.csv.
-    Overwrite if exists.
-    """
-    # Prepare CSV content
-    header = "execution_time,physical_memory_mb,virtual_memory_mb\n"
-    line = f"{execution_time:.3f},{phys_mb:.2f},{virt_mb:.2f}\n"
-    content = header + line
-
-    # Access HDFS via Hadoop API
-    jvm = sc._jvm
-    hadoop_conf = sc._jsc.hadoopConfiguration()
-    fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
-    log_path = LOG_DIR + f'log-spark{idx}.csv'
-    hdfs_path = jvm.org.apache.hadoop.fs.Path(log_path)
-
-    # Ensure log directory exists
-    log_dir_path = jvm.org.apache.hadoop.fs.Path(LOG_DIR)
-    if not fs.exists(log_dir_path):
-        fs.mkdirs(log_dir_path)
-
-    # Create or overwrite the log file
-    out = fs.create(hdfs_path, True)
-    out.write(bytearray(content, 'utf-8'))
-    out.close()
-    return log_path
-
+    
 #----------------------------#
 #         EXCEPTION          #
 #----------------------------#
@@ -109,129 +117,84 @@ class HDFSPathNotFoundError(Exception):
 #         SPARK JOB          #
 #----------------------------#
 class InvertedIndexSearch:
-    # Fields
-    spark: SparkSession
-    sc: SparkConf
-
-    # Methods
-    def __init__(self, app_name="InvertedIndexSearch", num_partitions = None):
-        """Configure Spark and initialize InvetedIndexSearch class"""
+    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None, change_log=False):
+        """Configure Spark and initialize SparkSession."""
         conf = SparkConf() \
             .setAppName(app_name) \
             .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .set("spark.kryoserializer.buffer.max", "512m")
         if num_partitions:
             conf = conf.set("spark.sql.shuffle.partitions", str(num_partitions))
+        if change_log:
+            conf = conf.set("spark.eventLog.enabled", "true").set("spark.eventLog.dir", LOG_DIR)
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
 
-    def safe_read_text(self, file_path):
-        """Read a text file; on error, skip and log a warning."""
-        try:
-            return self.spark.read.text(file_path)
-        except Exception as e:
-            printer.warning(f"Skipping file {file_path} due to read error: {e}")
-            return None
-
-    def safe_read_all(self, input_paths):
+    def safe_read(self, input_paths):
         """Read all valid text files and attach a 'filename' column."""
         dfs = []
-        for path in input_paths:
-            df = self.safe_read_text(path)
+
+        def safe_read_text(path):
+            try:
+                return self.spark.read.text(path)
+            except Exception as e:
+                printer.warning(f"Skipping file {path} due to read error: {e}")
+                return None
+
+        for p in input_paths:
+            df = safe_read_text(p)
             if df is not None:
                 dfs.append(
-                    df.withColumn("filename", udf(lambda path: os.path.basename(path), StringType())(input_file_name()))
+                    df.withColumn(
+                        "filename",
+                        udf(lambda x: os.path.basename(x), StringType())(input_file_name())
+                    )
                 )
         if not dfs:
             raise RuntimeError("No valid input files could be read")
-        # Union all DataFrames
-        df_all = dfs[0]
+        result = dfs[0]
         for df in dfs[1:]:
-            df_all = df_all.union(df)
-        return df_all
+            result = result.union(df)
+        return result
 
     def build_index(self, input_paths, output_path, output_format='text'):
-        """Build the inverse index"""
-        """PHASE 1: MAP-LIKE PHASE - Preprocessing and Tokenization"""
-        # Read files with filename column
-        df = self.safe_read_all(input_paths)
-
-        # Replace everything that is not letter/number with spaces and lowercase all
-        # Split lines into words and explode into rows
-        tokens = df.withColumn('word', explode(split(lower(regexp_replace(col('value'), r'[^A-Za-z0-9]', ' ')), '\\s+'))).filter(col('word') != '')
-
-        """PHASE 2: REDUCE-LIKE PHASE - Building Posting Lists"""        
-        # Count occurrences of each word per filename
+        """Build the inverted index and write to output_path."""
+        # Phase 1: tokenize
+        df = self.safe_read(input_paths)
+        tokens = (
+            df
+            .withColumn('word', explode(split(
+                lower(regexp_replace(col('value'), r'[^A-Za-z0-9]', ' ')),
+                '\\s+'
+            )))
+            .filter(col('word') != '')
+        )
+        # Phase 2: counts and postings
         counts = tokens.groupBy('word', 'filename').count()
-
-        # Create postings list and format output
         postings = (
-            counts.select(
-                col('word'),
-                concat(col('filename'), lit(':'), col('count')).alias('posting')
-            )
+            counts
+            .select(col('word'),
+                    concat(col('filename'), lit(':'), col('count')).alias('posting'))
             .groupBy('word')
             .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
         )
-
-        """PHASE 3: FORMAT OUTPUT"""
-        # Write output in the specified format
+        # Phase 3: write
         if output_format == 'text':
-            # Format to final output lines
-            formatted = postings.select(concat_ws('\t', col('word'), concat_ws('\t', col('postings_list'))))
-            # Default format: plain text output
+            formatted = postings.select(
+                concat_ws('\t', col('word'),
+                          concat_ws('\t', col('postings_list')))
+            )
             formatted.write.text(output_path)
         elif output_format == 'json':
-            # JSON output: word and list of postings as docs
-            json_ready = postings.selectExpr("word", "postings_list as docs")
-            json_ready.write.json(output_path)
+            postings.selectExpr("word", "postings_list as docs").write.json(output_path)
         elif output_format == 'parquet':
-            # Parquet output
-            parquet_ready = postings.selectExpr("word", "postings_list as docs")
-            parquet_ready.write.parquet(output_path)
+            postings.selectExpr("word", "postings_list as docs").write.parquet(output_path)
         else:
-            # Format to final output lines
-            formatted = postings.select(concat_ws('\t', col('word'), concat_ws('\t', col('postings_list'))))
+            formatted = postings.select(
+                concat_ws('\t', col('word'),
+                          concat_ws('\t', col('postings_list')))
+            )
             formatted.write.text(output_path)
-
-    def get_executors_memory_metrics(self):
-        """
-        Query Spark UI REST API to get executor memory metrics.
-        This requires Spark UI to be accessible.
-        Returns a dict with total physical and virtual memory used by executors (in MB).
-        """
-        try:
-            # Spark UI URL
-            spark_ui_url = self.spark.sparkContext.uiWebUrl
-            if not spark_ui_url:
-                printer.warning("Spark UI URL not found; cannot get executor memory metrics.")
-                return None
-
-            executors_api = f"{spark_ui_url}/api/v1/applications/{self.spark.sparkContext.applicationId}/executors"
-            response = requests.get(executors_api)
-            if response.status_code != 200:
-                printer.warning(f"Failed to get executor info: HTTP {response.status_code}")
-                return None
-            
-            executors = response.json()
-            
-            total_memory_used_mb = 0.0
-            total_memory_max_mb = 0.0
-            for exe in executors:
-                # memory metrics are in bytes 
-                # fields: memoryUsed, maxMemory
-                memory_used = exe.get('memoryUsed', 0)
-                max_memory = exe.get('maxMemory', 0)
-                total_memory_used_mb += memory_used / (1024**2)
-                total_memory_max_mb += max_memory / (1024**2)
-
-            return {
-                'total_memory_used_mb': total_memory_used_mb,
-                'total_memory_max_mb': total_memory_max_mb
-            }
-        except Exception as e:
-            printer.warning(f"Exception while fetching executor metrics: {e}")
-            return None
 
     def stop(self):
         """Stop the Spark session."""
@@ -241,67 +204,88 @@ class InvertedIndexSearch:
 #            MAIN            #
 #----------------------------#
 def main():
-    parser = argparse.ArgumentParser(description="Spark Inverted Index Builder with CSV Logging")
-    parser.add_argument('--num-partitions', type=int, help="Override number of output partitions")
+    parser = argparse.ArgumentParser(description="Spark Inverted Index Builder")
+    parser.add_argument('--num-partitions', type=int, help="Override output partitions")
     parser.add_argument('--limit-mb', type=int, help="Limit input size in MB")
     parser.add_argument(
         '--format', choices=['text', 'json', 'parquet'], default='text',
-        help="Output format: text (default), json or parquet"
+        help="Output format: text, json, or parquet"
     )
+    parser.add_argument('--input-folder', nargs='+', help="Local folders with .txt files")
+    parser.add_argument('--input-texts', nargs='+', help="Specific local .txt files")
+    parser.add_argument('--input-hdfs-folder', nargs='+',
+                        help="HDFS folders under base to read")
+    parser.add_argument('--input-hdfs-texts', nargs='+',
+                        help="Specific HDFS .txt files under base")
+    parser.add_argument('--output', help="Local output folder for results and logs")
+    parser.add_argument('--output-hdfs',
+                        help="HDFS output folder under base for results and logs")
     args = parser.parse_args()
 
-    # Start measuring execution time
-    start_time = time.time()
+    change_log = True
+    if args.output:
+        change_log = False
+    elif args.output_hdfs:
+        change_log = False
 
-    engine = InvertedIndexSearch(num_partitions=args.num_partitions)
+    engine = InvertedIndexSearch(num_partitions=args.num_partitions,change_log=change_log)
     try:
-        # Select input files
-        inputs = choose_input_paths(engine.sc, args.limit_mb)
-        if not inputs:
-            sys.exit(2)
-
         printer.info("Spark Inverted Index Builder Application Started ...")
+        start_time = time.time()
+        use_local_output = bool(args.output)
 
-        # Determine output path and its index
-        output_path, idx = choose_output_path(engine.sc)
+        # Determine input paths
+        input_paths = []
+        if args.input_folder:
+            for folder in args.input_folder:
+                files = list_local_txt_files(folder)
+                if args.limit_mb is not None:
+                    input_paths.extend(choose_local_input_paths(files, args.limit_mb))
+                else:
+                    input_paths.extend(files)
+        if args.input_texts:
+            input_paths.extend(args.input_texts)
+        if args.input_hdfs_folder:
+            for hf in args.input_hdfs_folder:
+                hdfs_path = HDFS_BASE + hf.rstrip('/')
+                if args.limit_mb is not None:
+                    input_paths.extend(choose_input_paths(engine.sc, args.limit_mb, hdfs_path))
+                else:
+                    input_paths.append(hdfs_path + '/*')
+        if args.input_hdfs_texts:
+            for ht in args.input_hdfs_texts:
+                input_paths.append(HDFS_BASE + ht)
+        if not input_paths:
+            input_paths = choose_input_paths(engine.sc, args.limit_mb)
+
+        # Determine output path
+        if use_local_output:
+            output_path = args.output
+            os.makedirs(output_path, exist_ok=True)
+        elif args.output_hdfs:
+            base = HDFS_BASE + args.output_hdfs.rstrip('/')
+            idx = 0
+            while hdfs_dir_exists(engine.sc, f"{base}-spark{idx}"):
+                idx += 1
+            output_path = f"{base}-spark{idx}"
+        else:
+            output_path = choose_output_path(engine.sc)
 
         # Build the index
-        engine.build_index(inputs, output_path, output_format=args.format)
-
+        engine.build_index(input_paths, output_path, output_format=args.format)
         printer.info(f"Index saved to {output_path}")
 
-        # Measure end time and memory usage
         end_time = time.time()
-        execution_time = end_time - start_time
+        printer.info(f"Execution Time: {(end_time - start_time):.3f} seconds")
+        printer.info("Spark Inverted Index Builder Application Finished ...")
 
-        mem_metrics = engine.get_executors_memory_metrics()
-        if mem_metrics:
-            physical_mb = mem_metrics['total_memory_used_mb']
-            virtual_mb  = mem_metrics['total_memory_max_mb']
-            printer.info(f"Total Executor Memory Used (MB): {mem_metrics['total_memory_used_mb']:.2f}")
-            printer.info(f"Total Executor Max Memory (MB): {mem_metrics['total_memory_max_mb']:.2f}")
-        else:
-            proc = psutil.Process(os.getpid())
-            mem_info = proc.memory_info()
-            physical_mb = mem_info.rss / (1024 ** 2)
-            virtual_mb  = mem_info.vms / (1024 ** 2)
-
-        printer.info(f"Execution Time: {execution_time}")
-        printer.info(f"Total Physical Memory: {physical_mb}")
-        printer.info(f"Total Virtual Memory: {virtual_mb}")
-
-        # Write CSV log with same index as output
-        log_path = write_log_to_hdfs(engine.sc, idx, execution_time, physical_mb, virtual_mb)
-        printer.info(f"Log saved to {log_path}")
-
-        printer.info("Spark Inverted Index Builder Application Ended ...")
     except HDFSPathNotFoundError as hdfse:
         printer.error(f"HDFS error: {hdfse}")
-        sys.exit(3)
+        sys.exit(2)
     except Exception as e:
         printer.exception("Unknown Error: Unexpected error occurred")
         sys.exit(1)
-    finally:
+    finally:        
         engine.stop()
 
 if __name__ == "__main__":

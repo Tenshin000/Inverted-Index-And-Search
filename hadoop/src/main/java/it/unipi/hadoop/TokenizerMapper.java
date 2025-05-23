@@ -1,4 +1,4 @@
-package com.example.hadoop;
+package it.unipi.hadoop;
 
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
