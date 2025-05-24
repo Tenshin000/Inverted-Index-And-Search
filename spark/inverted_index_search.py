@@ -1,6 +1,8 @@
 import argparse
 import logging
 import os
+import psutil
+import requests
 import sys
 import time
 from pyspark import SparkConf
@@ -125,8 +127,8 @@ class InvertedIndexSearch:
             .set("spark.kryoserializer.buffer.max", "512m")
         if num_partitions:
             conf = conf.set("spark.sql.shuffle.partitions", str(num_partitions))
-        if change_log:
-            conf = conf.set("spark.eventLog.enabled", "true").set("spark.eventLog.dir", LOG_DIR)
+        # if change_log:
+        #    conf = conf.set("spark.eventLog.enabled", "true").set("spark.eventLog.dir", LOG_DIR)
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
 
@@ -159,7 +161,7 @@ class InvertedIndexSearch:
 
     def build_index(self, input_paths, output_path, output_format='text'):
         """Build the inverted index and write to output_path."""
-        # Phase 1: tokenize
+        # Phase 1: Tokenize (Map-Like)
         df = self.safe_read(input_paths)
         tokens = (
             df
@@ -169,7 +171,8 @@ class InvertedIndexSearch:
             )))
             .filter(col('word') != '')
         )
-        # Phase 2: counts and postings
+
+        # Phase 2: Counts and Postings (Reduce-Like)
         counts = tokens.groupBy('word', 'filename').count()
         postings = (
             counts
@@ -178,7 +181,8 @@ class InvertedIndexSearch:
             .groupBy('word')
             .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
         )
-        # Phase 3: write
+
+        # Phase 3: Write Output
         if output_format == 'text':
             formatted = postings.select(
                 concat_ws('\t', col('word'),
@@ -195,6 +199,131 @@ class InvertedIndexSearch:
                           concat_ws('\t', col('postings_list')))
             )
             formatted.write.text(output_path)
+
+    def get_hdfs_dir_size(self, path):
+        """Compute total size of all files in an HDFS path."""
+        jvm = self.sc._jvm
+        hadoop_conf = self.sc._jsc.hadoopConfiguration()
+        fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
+        p = jvm.org.apache.hadoop.fs.Path(path)
+        total_size = 0
+        if fs.exists(p):
+            for status in fs.listStatus(p):
+                if status.isFile():
+                    total_size += status.getLen()
+                elif status.isDirectory():
+                    total_size += self.get_hdfs_dir_size(status.getPath().toString())
+        return total_size
+
+    def collect_and_log_metrics(self, output_path, execution_time):
+        """Collect Spark and system metrics and log them."""
+        output_size_bytes = self.get_hdfs_dir_size(output_path)
+        output_size_mb = output_size_bytes / (1024 ** 2)
+
+        proc = psutil.Process()
+        driver_rss_b = proc.memory_info().rss
+        driver_cpu_time = sum(proc.cpu_times())
+        disk_counters = psutil.disk_io_counters()
+        driver_disk_read_b = disk_counters.read_bytes
+        driver_disk_write_b = disk_counters.write_bytes
+
+        MB = 1024 ** 2
+        NS_TO_S = 1e-9
+
+        driver_rss_mb = driver_rss_b / MB
+        driver_disk_read_mb = driver_disk_read_b / MB
+        driver_disk_write_mb = driver_disk_write_b / MB
+
+        app_id = self.sc.applicationId
+        host = self.sc._conf.get("spark.driver.host")
+        port = self.sc._conf.get("spark.ui.port", "4040")
+        url = f"http://{host}:{port}/api/v1/applications/{app_id}/executors"
+        execs = requests.get(url).json()
+
+        executor_agg = {
+            "rddBlocks": 0,
+            "memoryUsed": 0,
+            "diskUsed": 0,
+            "totalTasks": 0,
+            "completedTasks": 0,
+            "totalGCTime": 0,
+            "totalInputBytes": 0,
+            "totalShuffleRead": 0,
+            "totalShuffleWrite": 0,
+            "onHeapExecMem": 0,
+            "offHeapExecMem": 0
+        }
+
+        for e in execs:
+            executor_agg["rddBlocks"] += e.get("rddBlocks", 0)
+            executor_agg["memoryUsed"] += e.get("memoryUsed", 0)
+            executor_agg["diskUsed"] += e.get("diskUsed", 0)
+            executor_agg["totalTasks"] += e.get("totalTasks", 0)
+            executor_agg["completedTasks"] += e.get("completedTasks", 0)
+            executor_agg["totalGCTime"] += e.get("totalGCTime", 0)
+            executor_agg["totalInputBytes"] += e.get("totalInputBytes", 0)
+            executor_agg["totalShuffleRead"] += e.get("totalShuffleRead", 0)
+            executor_agg["totalShuffleWrite"] += e.get("totalShuffleWrite", 0)
+            peak = e.get("peakMemoryMetrics", {})
+            executor_agg["onHeapExecMem"] += peak.get("OnHeapExecutionMemory", 0)
+            executor_agg["offHeapExecMem"] += peak.get("OffHeapExecutionMemory", 0)
+
+        stages_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages"
+        stages = requests.get(stages_url).json()
+
+        stage_cpu_time_ns = 0
+        stage_peak_memory = 0
+        stage_task_duration_ms = 0
+
+        for stage in stages:
+            sid = stage.get("stageId")
+            attempt = stage.get("attemptId", 0)
+            task_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages/{sid}/{attempt}/taskList"
+            task_data = requests.get(task_url).json()
+
+            for task in task_data:
+                metrics = task.get("taskMetrics", {})
+                stage_cpu_time_ns += metrics.get("executorCpuTime", 0)
+                stage_peak_memory += metrics.get("peakExecutionMemory", 0)
+                stage_task_duration_ms += metrics.get("executorRunTime", 0)
+
+        rdd_blocks = executor_agg["rddBlocks"]
+        memory_used_mb = executor_agg["memoryUsed"] / MB
+        disk_used_mb = executor_agg["diskUsed"] / MB
+        total_tasks = executor_agg["totalTasks"]
+        completed_tasks = executor_agg["completedTasks"]
+        hdfs_read_mb = executor_agg["totalInputBytes"] / MB
+        shuffle_read_mb = executor_agg["totalShuffleRead"] / MB
+        shuffle_write_mb = executor_agg["totalShuffleWrite"] / MB
+        on_heap_exec_mb = executor_agg["onHeapExecMem"] / MB
+        off_heap_exec_mb = executor_agg["offHeapExecMem"] / MB
+        peak_exec_mem_mb = (executor_agg["onHeapExecMem"] + executor_agg["offHeapExecMem"]) / MB
+        total_stage_cpu_s = stage_cpu_time_ns * NS_TO_S
+        total_stage_peak_mb = stage_peak_memory / MB
+        duration_s = stage_task_duration_ms / 1000.0
+        gc_time_s = executor_agg["totalGCTime"] / 1000.0
+
+        printer.info(f"Execution Time              : {execution_time:.3f} seconds")
+        printer.info(f"Total tasks launched        : {total_tasks}")
+        printer.info(f"Tasks completed             : {completed_tasks}")
+        printer.info(f"Total tasks duration        : {duration_s:.3f} seconds")
+        printer.info(f"Driver CPU time             : {driver_cpu_time:.3f} seconds")
+        printer.info(f"Total CPU time              : {total_stage_cpu_s:.3f} seconds")
+        printer.info(f"Total GC time               : {gc_time_s:.3f} seconds")
+        printer.info(f"Driver RSS memory           : {driver_rss_mb:.2f} MB")
+        printer.info(f"Memory used (storage)       : {memory_used_mb:.2f} MB")
+        printer.info(f"Peak execution memory       : {peak_exec_mem_mb:.2f} MB")
+        printer.info(f"  - On heap                 : {on_heap_exec_mb:.2f} MB")
+        printer.info(f"  - Off heap                : {off_heap_exec_mb:.2f} MB")
+        printer.info(f"Peak stage memory           : {total_stage_peak_mb:.2f} MB")
+        printer.info(f"Disk used by RDD            : {disk_used_mb:.2f} MB")
+        printer.info(f"Driver disk read            : {driver_disk_read_mb:.2f} MB")
+        printer.info(f"Driver disk write           : {driver_disk_write_mb:.2f} MB")
+        printer.info(f"HDFS bytes read             : {hdfs_read_mb:.2f} MB")
+        printer.info(f"HDFS bytes written          : {output_size_mb:.2f} MB")
+        printer.info(f"Shuffle read bytes          : {shuffle_read_mb:.2f} MB")
+        printer.info(f"Shuffle write bytes         : {shuffle_write_mb:.2f} MB")
+        printer.info(f"RDD blocks cached           : {rdd_blocks}")
 
     def stop(self):
         """Stop the Spark session."""
@@ -274,9 +403,10 @@ def main():
         # Build the index
         engine.build_index(input_paths, output_path, output_format=args.format)
         printer.info(f"Index saved to {output_path}")
-
         end_time = time.time()
-        printer.info(f"Execution Time: {(end_time - start_time):.3f} seconds")
+        execution_time = end_time - start_time
+        # Collect the statistics
+        engine.collect_and_log_metrics(output_path, execution_time)
         printer.info("Spark Inverted Index Builder Application Finished ...")
 
     except HDFSPathNotFoundError as hdfse:
