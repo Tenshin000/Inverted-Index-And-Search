@@ -23,7 +23,7 @@ public class InvertedIndexAndSearch {
 
         job.setJarByClass(InvertedIndexAndSearch.class);
 
-        job.setMapperClass(TokenizerMapper.class);
+        job.setMapperClass(TokenizerMapperStateful.class);
         job.setCombinerClass(DocumentCountReducer.class);
         job.setReducerClass(DocumentCountReducer.class);
 

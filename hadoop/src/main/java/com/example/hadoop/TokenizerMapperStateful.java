@@ -72,6 +72,7 @@ public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Te
     }
 
 // First solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 ... docN:countN>
+/*
     @Override
     public void cleanup(Context context) throws IOException, InterruptedException {
         for (WordOccurrences occ : wordCounts.values()) {
@@ -85,9 +86,8 @@ public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Te
             context.write(new Text(occ.getWord()), new Text(valueBuilder.toString()));
         }
     }
-
+*/
 // Second solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 > ... <word, docN:countN>
-/*
     @Override
     public void cleanup(Context context) throws IOException, InterruptedException {
         for (WordOccurrences occ : wordCounts.values()) {
@@ -96,5 +96,4 @@ public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Te
             }
         }
     }
-*/
 }
