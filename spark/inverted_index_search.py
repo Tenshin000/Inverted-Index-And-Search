@@ -275,6 +275,8 @@ class InvertedIndexSearch:
         stage_peak_memory = 0
         stage_task_duration_ms = 0
 
+        peak_stage_b = 0
+
         for stage in stages:
             sid = stage.get("stageId")
             attempt = stage.get("attemptId", 0)
@@ -285,6 +287,8 @@ class InvertedIndexSearch:
                 metrics = task.get("taskMetrics", {})
                 stage_cpu_time_ns += metrics.get("executorCpuTime", 0)
                 stage_peak_memory += metrics.get("peakExecutionMemory", 0)
+                if(peak_stage_b <= metrics.get("peakExecutionMemory", 0)):
+                    peak_stage_b = metrics.get("peakExecutionMemory", 0)
                 stage_task_duration_ms += metrics.get("executorRunTime", 0)
 
         rdd_blocks = executor_agg["rddBlocks"]
@@ -297,7 +301,8 @@ class InvertedIndexSearch:
         shuffle_write_mb = executor_agg["totalShuffleWrite"] / MB
         on_heap_exec_mb = executor_agg["onHeapExecMem"] / MB
         off_heap_exec_mb = executor_agg["offHeapExecMem"] / MB
-        peak_exec_mem_mb = (executor_agg["onHeapExecMem"] + executor_agg["offHeapExecMem"]) / MB
+        total_exec_mem_mb = (executor_agg["onHeapExecMem"] + executor_agg["offHeapExecMem"]) / MB
+        peak_stage_mb = peak_stage_b / MB
         total_stage_cpu_s = stage_cpu_time_ns * NS_TO_S
         total_stage_peak_mb = stage_peak_memory / MB
         duration_s = stage_task_duration_ms / 1000.0
@@ -312,11 +317,12 @@ class InvertedIndexSearch:
         printer.info(f"Total GC time               : {gc_time_s:.3f} seconds")
         printer.info(f"Driver RSS memory           : {driver_rss_mb:.2f} MB")
         printer.info(f"Memory used (storage)       : {memory_used_mb:.2f} MB")
-        printer.info(f"Peak execution memory       : {peak_exec_mem_mb:.2f} MB")
+        printer.info(f"Total Peak execution memory : {total_exec_mem_mb:.2f} MB")
         printer.info(f"  - On heap                 : {on_heap_exec_mb:.2f} MB")
         printer.info(f"  - Off heap                : {off_heap_exec_mb:.2f} MB")
-        printer.info(f"Peak stage memory           : {total_stage_peak_mb:.2f} MB")
-        printer.info(f"Disk used by RDD            : {disk_used_mb:.2f} MB")
+        printer.info(f"Total Peak Stage memory     : {total_stage_peak_mb:.2f} MB")
+        printer.info(f"Peak Stage Memory           : {peak_stage_mb:.2f} MB")
+        printer.info(f"Disk used for RDD           : {disk_used_mb:.2f} MB")
         printer.info(f"Driver disk read            : {driver_disk_read_mb:.2f} MB")
         printer.info(f"Driver disk write           : {driver_disk_write_mb:.2f} MB")
         printer.info(f"HDFS bytes read             : {hdfs_read_mb:.2f} MB")
