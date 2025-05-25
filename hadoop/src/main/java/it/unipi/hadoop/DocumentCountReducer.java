@@ -23,8 +23,22 @@ public class DocumentCountReducer extends Reducer<Text, Text, Text, Text> {
 
             for (String docCountPair : docCountPairs) {
                 String[] parts = docCountPair.split(":");
-                String docId = parts[0];
-                int count = Integer.parseInt(parts[1]);
+
+                // bad-formatted stuff
+                if (parts.length < 2) {
+                    continue;
+                }
+
+                // it's possible that the doc-id has ':' character inside
+                // the next part of code considers this fact and it gives the correct value to doc-id and count
+                StringBuilder docIdBuilder = new StringBuilder();
+                for (int i = 0; i < parts.length - 1; i++) {
+                    if (i > 0) docIdBuilder.append(":");
+                    docIdBuilder.append(parts[i]);
+                }
+                String docId = docIdBuilder.toString().trim();
+
+                int count = Integer.parseInt(parts[parts.length - 1].trim());
 
                 docCounts.put(docId, docCounts.getOrDefault(docId, 0) + count);
             }
