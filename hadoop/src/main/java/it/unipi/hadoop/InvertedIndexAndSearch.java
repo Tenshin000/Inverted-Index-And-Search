@@ -6,6 +6,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.lib.input.CombineTextInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
@@ -218,6 +219,9 @@ public class InvertedIndexAndSearch {
 
         // set output path
         FileOutputFormat.setOutputPath(job, outputPath);
+
+        job.setInputFormatClass(CombineTextInputFormat.class);
+        CombineTextInputFormat.setMaxInputSplitSize(job, 134217728);
 
         // submit job
         boolean success = job.waitForCompletion(true);

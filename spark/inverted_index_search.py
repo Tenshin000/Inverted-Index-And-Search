@@ -7,8 +7,7 @@ import sys
 import time
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import input_file_name, udf, explode, split, lower, regexp_replace, col, concat_ws, collect_list, concat, lit, sort_array
-from pyspark.sql.types import StringType
+from pyspark.sql.functions import input_file_name, explode, split, lower, regexp_replace, col, concat_ws, collect_list, concat, lit, sort_array
 
 #----------------------------#
 #        CONFIGURATION       #
@@ -119,18 +118,30 @@ class HDFSPathNotFoundError(Exception):
 #         SPARK JOB          #
 #----------------------------#
 class InvertedIndexSearch:
+    # Fields
+    spark: SparkSession
+    sc: SparkConf
+    num_partitions: int
+
+    # Methods
     def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None, change_log=False):
         """Configure Spark and initialize SparkSession."""
         conf = SparkConf() \
-            .setAppName(app_name) \
-            .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
-            .set("spark.kryoserializer.buffer.max", "512m")
-        if num_partitions:
-            conf = conf.set("spark.sql.shuffle.partitions", str(num_partitions))
-        # if change_log:
-        #    conf = conf.set("spark.eventLog.enabled", "true").set("spark.eventLog.dir", LOG_DIR)
+                .setAppName(app_name) \
+                .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+                .set("spark.kryoserializer.buffer.max", "512m") \
+                .set("spark.speculation", "true") \
+                .set("spark.speculation.multiplier", "1.5") \
+                .set("spark.eventLog.enabled", "true") \
+                .set("spark.dynamicAllocation.enabled", "true") \
+                .set("spark.dynamicAllocation.minExecutors", "3") \
+                .set("spark.dynamicAllocation.initialExecutors", "3")
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
+        if num_partitions is not None:
+            self.num_partitions = num_partitions
+        else:
+            self.num_partitions = None
 
     def safe_read(self, input_paths):
         """Read all valid text files and attach a 'filename' column."""
@@ -146,12 +157,9 @@ class InvertedIndexSearch:
         for p in input_paths:
             df = safe_read_text(p)
             if df is not None:
-                dfs.append(
-                    df.withColumn(
-                        "filename",
-                        udf(lambda x: os.path.basename(x), StringType())(input_file_name())
-                    )
-                )
+                df = df.withColumn("filename_full", input_file_name())
+                df = df.withColumn("filename", regexp_replace("filename_full", "hdfs://hadoop-namenode:9820/user/hadoop/inverted-index/data/", ""))
+                dfs.append(df)
         if not dfs:
             raise RuntimeError("No valid input files could be read")
         result = dfs[0]
@@ -172,6 +180,9 @@ class InvertedIndexSearch:
             .filter(col('word') != '')
         )
 
+        if self.num_partitions is not None:
+            tokens = tokens.repartition(self.num_partitions)
+
         # Phase 2: Counts and Postings (Reduce-Like)
         counts = tokens.groupBy('word', 'filename').count()
         postings = (
@@ -182,12 +193,17 @@ class InvertedIndexSearch:
             .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
         )
 
+        if self.num_partitions is not None:
+            postings = postings.repartition(self.num_partitions) 
+
         # Phase 3: Write Output
         if output_format == 'text':
             formatted = postings.select(
                 concat_ws('\t', col('word'),
                           concat_ws('\t', col('postings_list')))
             )
+            if self.num_partitions is not None:
+                formatted = formatted.repartition(self.num_partitions) 
             formatted.write.text(output_path)
         elif output_format == 'json':
             postings.selectExpr("word", "postings_list as docs").write.json(output_path)
@@ -198,6 +214,8 @@ class InvertedIndexSearch:
                 concat_ws('\t', col('word'),
                           concat_ws('\t', col('postings_list')))
             )
+            if self.num_partitions is not None:
+                formatted = formatted.repartition(self.num_partitions) 
             formatted.write.text(output_path)
 
     def get_hdfs_dir_size(self, path):
@@ -348,13 +366,10 @@ def main():
     )
     parser.add_argument('--input-folder', nargs='+', help="Local folders with .txt files")
     parser.add_argument('--input-texts', nargs='+', help="Specific local .txt files")
-    parser.add_argument('--input-hdfs-folder', nargs='+',
-                        help="HDFS folders under base to read")
-    parser.add_argument('--input-hdfs-texts', nargs='+',
-                        help="Specific HDFS .txt files under base")
+    parser.add_argument('--input-hdfs-folder', nargs='+', help="HDFS folders under base to read")
+    parser.add_argument('--input-hdfs-texts', nargs='+', help="Specific HDFS .txt files under base")
     parser.add_argument('--output', help="Local output folder for results and logs")
-    parser.add_argument('--output-hdfs',
-                        help="HDFS output folder under base for results and logs")
+    parser.add_argument('--output-hdfs', help="HDFS output folder under base for results and logs")
     args = parser.parse_args()
 
     change_log = True
