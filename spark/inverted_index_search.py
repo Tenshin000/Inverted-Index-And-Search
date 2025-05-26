@@ -174,7 +174,7 @@ class InvertedIndexSearch:
         tokens = (
             df
             .withColumn('word', explode(split(
-                lower(lower(regexp_replace(col('value'), r'[^\p{L}0-9]', ' '))),
+                lower(regexp_replace(col('value'), r'[^\p{L}0-9\\s]', ' ')),
                 '\\s+'
             )))
             .filter(col('word') != '')
@@ -202,7 +202,8 @@ class InvertedIndexSearch:
                 concat_ws('\t', col('word'),
                           concat_ws('\t', col('postings_list')))
             )
-
+            if self.num_partitions is not None:
+                formatted = formatted.repartition(self.num_partitions) 
             formatted.write.text(output_path)
         elif output_format == 'json':
             postings.selectExpr("word", "postings_list as docs").write.json(output_path)
