@@ -220,7 +220,7 @@ public class InvertedIndexAndSearch {
         // set output path
         FileOutputFormat.setOutputPath(job, outputPath);
 
-        job.setInputFormatClass(CombineTextInputFormat.class);
+        job.setInputFormatClass(MyCombineTextInputFormat.class);
         CombineTextInputFormat.setMaxInputSplitSize(job, 134217728);
 
         // submit job
