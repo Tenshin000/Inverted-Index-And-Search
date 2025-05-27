@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import psutil
+import re
 import requests
 import sys
 import time
@@ -143,82 +144,59 @@ class InvertedIndexSearch:
         else:
             self.num_partitions = None
 
-    def safe_read(self, input_paths):
-        """Read all valid text files and attach a 'filename' column."""
-        dfs = []
+    @staticmethod
+    def _tokenize(text):
+        """
+        Simple tokenizer: convert to lowercase, remove punctuation, split on whitespace.
+        """
+        cleaned = re.sub(r"[\W_]+", " ", text.lower())
+        return cleaned.split()
 
-        def safe_read_text(path):
-            try:
-                return self.spark.read.text(path)
-            except Exception as e:
-                printer.warning(f"Skipping file {path} due to read error: {e}")
-                return None
+    def build_index(self, input_paths, output_path, output_format="text"):
+        """
+        Build inverted index and save in specified format: text, json, or parquet.
+        """
+        tokenize = InvertedIndexSearch._tokenize
+        
+        paths = ",".join(input_paths)
+        files_rdd = self.sc.wholeTextFiles(paths)
 
-        for p in input_paths:
-            df = safe_read_text(p)
-            if df is not None:
-                if p == DATA_DIR:
-                    df = df.withColumn("filename", regexp_replace(input_file_name(), "hdfs://hadoop-namenode:9820/user/hadoop/inverted-index/data/", ""))  
-                else:
-                    df = df.withColumn("filename", regexp_extract(input_file_name(), r"([^/]+$)", 1)) 
-                dfs.append(df)
-        if not dfs:
-            raise RuntimeError("No valid input files could be read")
-        result = dfs[0]
-        for df in dfs[1:]:
-            result = result.union(df)
-        return result
+        # ((word, filename), 1)
+        pairs = files_rdd.flatMap(lambda fc: [((word, os.path.basename(fc[0])), 1)
+                                            for word in tokenize(fc[1])])
 
-    def build_index(self, input_paths, output_path, output_format='text'):
-        """Build the inverted index and write to output_path."""
-        # Phase 1: Tokenize (Map-Like)
-        df = self.safe_read(input_paths)
-        tokens = (
-            df
-            .withColumn('word', explode(split(
-                lower(regexp_replace(col('value'), r'[^\p{L}0-9\\s]', ' ')),
-                '\\s+'
-            )))
-            .filter(col('word') != '')
-        )
+        counts = pairs.reduceByKey(lambda x, y: x + y)
 
-        if self.num_partitions is not None:
-            tokens = tokens.repartition(self.num_partitions)
+        word_file_counts = counts.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
 
-        # Phase 2: Counts and Postings (Reduce-Like)
-        counts = tokens.groupBy('word', 'filename').count()
-        postings = (
-            counts
-            .select(col('word'),
-                    concat(col('filename'), lit(':'), col('count')).alias('posting'))
-            .groupBy('word')
-            .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
-        )
+        grouped = word_file_counts.groupByKey()
 
-        if self.num_partitions is not None:
-            postings = postings.repartition(self.num_partitions) 
+        if output_format == "text":
+            formatted = grouped.map(
+                lambda wc: f"{wc[0]}\t" + '\t'.join(f"{fn}:{cnt}" for fn, cnt in sorted(wc[1])))
+            formatted.saveAsTextFile(output_path)
 
-        # Phase 3: Write Output
-        if output_format == 'text':
-            formatted = postings.select(
-                concat_ws('\t', col('word'),
-                          concat_ws('\t', col('postings_list')))
+        elif output_format == "json":
+            import json
+            json_rdd = grouped.map(lambda wc: json.dumps({
+                "word": wc[0],
+                "occurrences": [{"file": fn, "count": cnt} for fn, cnt in sorted(wc[1])]
+            }))
+            json_rdd.saveAsTextFile(output_path)
+
+        elif output_format == "parquet":
+            from pyspark.sql import Row
+            df = self.spark.createDataFrame(
+                grouped.flatMap(lambda wc: [
+                    Row(word=wc[0], file=fn, count=cnt) for fn, cnt in wc[1]
+                ])
             )
-            if self.num_partitions is not None:
-                formatted = formatted.repartition(self.num_partitions) 
-            formatted.write.text(output_path)
-        elif output_format == 'json':
-            postings.selectExpr("word", "postings_list as docs").write.json(output_path)
-        elif output_format == 'parquet':
-            postings.selectExpr("word", "postings_list as docs").write.parquet(output_path)
+            df.write.parquet(output_path)
+
         else:
-            formatted = postings.select(
-                concat_ws('\t', col('word'),
-                          concat_ws('\t', col('postings_list')))
-            )
-            if self.num_partitions is not None:
-                formatted = formatted.repartition(self.num_partitions) 
-            formatted.write.text(output_path)
+            raise ValueError(f"Unsupported output format: {output_format}")
+
+        print(f"Index saved to {output_path} in {output_format} format.")
 
     def get_hdfs_dir_size(self, path):
         """Compute total size of all files in an HDFS path."""
