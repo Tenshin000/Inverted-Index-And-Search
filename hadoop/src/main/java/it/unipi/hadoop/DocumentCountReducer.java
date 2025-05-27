@@ -7,55 +7,66 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-    
-// INPUT (key: word, value: doc1:count, doc2:count, ...)
-// OUTPUT (key: word, value: doc1:countSum, doc2:countSum, ...)
+// INPUT  (key: word, value: doc1:count,doc2:count,...)
+// OUTPUT (key: word, value: doc1:countSum,doc2:countSum,...)
 
 public class DocumentCountReducer extends Reducer<Text, Text, Text, Text> {
+
+    // Reusable StringBuilder for output string construction
+    private final StringBuilder outputBuilder = new StringBuilder();
+
     @Override
-    public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-        // map used to count in the files # appearences
+    protected void reduce(Text key, Iterable<Text> values, Context context)
+            throws IOException, InterruptedException {
+
+        // Map to store the sum of counts per document ID
         Map<String, Integer> docCounts = new HashMap<>();
 
-        // iter on values
         for (Text val : values) {
-            String[] docCountPairs = val.toString().split(",");
+            String s = val.toString();
+            int start = 0;
+            int len = s.length();
 
-            for (String docCountPair : docCountPairs) {
-                String[] parts = docCountPair.split(":");
+            // Iterate through comma-separated pairs without splitting the whole string
+            while (start < len) {
+                int comma = s.indexOf(',', start);
+                int end = (comma >= 0 ? comma : len);
 
-                // bad-formatted stuff
-                if (parts.length < 2) {
-                    continue;
+                // Extract the substring for the current pair
+                String pair = s.substring(start, end).trim();
+                start = end + 1;
+
+                // Find the last ':' to handle doc IDs that may contain ':'
+                int colon = pair.lastIndexOf(':');
+                if (colon <= 0 || colon == pair.length() - 1) {
+                    continue; // malformed pair, skip it
                 }
 
-                // it's possible that the doc-id has ':' character inside
-                // the next part of code considers this fact and it gives the correct value to doc-id and count
-                StringBuilder docIdBuilder = new StringBuilder();
-                for (int i = 0; i < parts.length - 1; i++) {
-                    if (i > 0) docIdBuilder.append(":");
-                    docIdBuilder.append(parts[i]);
+                String docId = pair.substring(0, colon);
+                String countStr = pair.substring(colon + 1);
+                try {
+                    int count = Integer.parseInt(countStr);
+                    // Merge count into the map
+                    docCounts.merge(docId, count, Integer::sum);
+                } catch (NumberFormatException e) {
+                    // Skip invalid count formats
                 }
-                String docId = docIdBuilder.toString().trim();
-
-                int count = Integer.parseInt(parts[parts.length - 1].trim());
-
-                docCounts.put(docId, docCounts.getOrDefault(docId, 0) + count);
             }
         }
 
-        // building output string
-        StringBuilder outputValue = new StringBuilder();
+        // Build the output value: doc1:sum1,doc2:sum2,...
+        outputBuilder.setLength(0); // clear previous content
         for (Map.Entry<String, Integer> entry : docCounts.entrySet()) {
-            if (outputValue.length() > 0) {
-                outputValue.append(", ");
+            if (outputBuilder.length() > 0) {
+                outputBuilder.append(",");
             }
-            String docOutput = entry.getKey() + ":" + entry.getValue();
-            outputValue.append(docOutput);
+            outputBuilder
+                .append(entry.getKey())
+                .append(':')
+                .append(entry.getValue());
         }
 
-        // writing output in the correct format
-        context.write(key, new Text(outputValue.toString()));
+        // Emit the final output key-value pair
+        context.write(key, new Text(outputBuilder.toString()));
     }
 }
-

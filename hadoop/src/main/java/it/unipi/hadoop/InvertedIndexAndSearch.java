@@ -6,6 +6,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.lib.input.CombineTextInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
@@ -184,6 +185,7 @@ public class InvertedIndexAndSearch {
         Path outputPath = resolveOutputPath(fs, defaultOutputRoot, outputHdfsRoot, outputLocal);
 
         // --- JOB CONFIGURATION in main ---
+        long startTime = System.currentTimeMillis();
         Job job = Job.getInstance(conf, "HadoopInvertedIndexSearch");
         job.setJarByClass(InvertedIndexAndSearch.class);
 
@@ -218,7 +220,17 @@ public class InvertedIndexAndSearch {
         // set output path
         FileOutputFormat.setOutputPath(job, outputPath);
 
+        job.setInputFormatClass(MyCombineTextInputFormat.class);
+        CombineTextInputFormat.setMaxInputSplitSize(job, 134217728);
+
         // submit job
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        boolean success = job.waitForCompletion(true);
+
+        // execution time 
+        long endTime   = System.currentTimeMillis();
+        double executionTime = (endTime - startTime) / 1000.0;
+        System.out.printf("Execution Time: %.2f s%n", executionTime);
+        
+        System.exit(success ? 0 : 1);
     }
 }

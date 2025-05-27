@@ -15,13 +15,14 @@ import java.util.Map;
 // OUTPUT (key: word, value: docN:countSum)
 
 public class CombinerDocCounts extends Reducer<Text, Text, Text, Text> {
+
     @Override
     public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
         // map used to count in the files # appearences
         // structure: <doc-id, count>
         Map<String, Integer> docCounts = new HashMap<>();
 
-        // iter on values
+        // iterate on values
         for (Text val : values) {
             String[] parts = val.toString().split(":");
             String docId = parts[0];
@@ -34,7 +35,7 @@ public class CombinerDocCounts extends Reducer<Text, Text, Text, Text> {
         for (Map.Entry<String, Integer> entry : docCounts.entrySet()) {
             String docId = entry.getKey();
             int totalCount = entry.getValue();
-            context.write(key, new Text(docId + ":" + totalCount)); 
+            context.write(key, new Text(docId + ":" + totalCount));
         }
     }
 }

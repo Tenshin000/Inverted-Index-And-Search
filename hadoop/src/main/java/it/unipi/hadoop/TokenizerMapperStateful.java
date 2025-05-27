@@ -1,98 +1,91 @@
 package it.unipi.hadoop;
 
-import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.Mapper;
-import org.apache.hadoop.mapreduce.lib.input.FileSplit;
-
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-import java.io.IOException;
-    
-
-// INPUT (key: offset, value: doc)
-// OUTPUT (key: word, value: doc1:count, doc2:count, ...)
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.fs.Path;
 
 public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Text> {
+    // Threshold to trigger flushing of the in-memory word counts to context
+    private static final int FLUSH_THRESHOLD = 10000;
 
-// class used to implement internal combining
-    public class WordOccurrences {
-        private final String word;
-        private final Map<String, Integer> docCounts;
+    // Map to store word -> (document -> count) relationships
+    private Map<String, Map<String, Integer>> wordCounts;
 
-        public WordOccurrences(String word) {
-            this.word = word;
-            this.docCounts = new HashMap<>();
-        }
+    private Text wordText = new Text();  // Hadoop output key (word)
+    private Text valueText = new Text(); // Hadoop output value (filename:count)
 
-        public String getWord() {
-            return word;
-        }
-
-        public void addOccurrence(String docId) {
-            docCounts.put(docId, docCounts.getOrDefault(docId, 0) + 1);
-        }
-
-        public Map<String, Integer> getDocCounts() {
-            return docCounts;
-        }
-    }
-
-
-// Internal map structured as <word, [doc1, count1] ... [docN, countN]>
-    private Map<String, WordOccurrences> wordCounts;
-    private String filename;
-
-
-// In the setup method, document name is retrieved
     @Override
-    public void setup(Context context) throws IOException, InterruptedException {
-        FileSplit fileSplit = (FileSplit) context.getInputSplit();
-        filename = fileSplit.getPath().getName();
+    protected void setup(Context context) {
+        // Initialize the word count map
         wordCounts = new HashMap<>();
     }
 
-// The map method is very similiar to the standard word-count, with difference in the output format, since in this case document name is included.
     @Override
-    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-        String line = value.toString().toLowerCase().replaceAll("[.,:;]\'\"", "");
-        String[] tokens = line.split("\\s+");
+    protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+        // Get full file path for the current split using a custom wrapper
+        String fullFilePath = MyCombineFileRecordReaderWrapper.getCurrentFilePath();
+        
+        // Extract only the filename from the full file path
+        String currentFilename = "unknown";
+        if (fullFilePath != null) {
+            Path path = new Path(fullFilePath);
+            currentFilename = path.getName();  // Just the file name
+        }
+
+        // Fallback to "unknown" if filename extraction failed
+        if (currentFilename == null) {
+            currentFilename = "unknown";
+        }
+
+        // Clean and tokenize the line: remove non-alphanumerics and split by whitespace
+        String[] tokens = value.toString()
+                .toLowerCase()
+                .replaceAll("[^\\p{L}0-9\\s]", " ")  // Replace punctuation with space
+                .split("\\s+");  // Split on one or more whitespace characters
+
+        // Count each token per document
         for (String token : tokens) {
-            if (!token.isEmpty()) {
-                WordOccurrences occ = wordCounts.get(token);
-                if (occ == null) {
-                    occ = new WordOccurrences(token);
-                    wordCounts.put(token, occ);
-                }
-                occ.addOccurrence(filename);
-            }
+            if (token.isEmpty()) 
+                continue;
+
+            // Get or create the map for this word
+            Map<String, Integer> docMap = wordCounts.computeIfAbsent(token, k -> new HashMap<>());
+            // Increment the count for this filename
+            docMap.put(currentFilename, docMap.getOrDefault(currentFilename, 0) + 1);
+        }
+
+        // Flush intermediate results if the threshold is reached
+        if (wordCounts.size() >= FLUSH_THRESHOLD) {
+            flush(context);
         }
     }
-/*
-// First solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 ... docN:countN>
-    @Override
-    public void cleanup(Context context) throws IOException, InterruptedException {
-        for (WordOccurrences occ : wordCounts.values()) {
-            StringBuilder valueBuilder = new StringBuilder();
-            for (Map.Entry<String, Integer> entry : occ.getDocCounts().entrySet()) {
-                if (valueBuilder.length() > 0) {
-                    valueBuilder.append(", ");
-                }
-                valueBuilder.append(entry.getKey()).append(":").append(entry.getValue());
+
+    // Write the current word counts to the context and clear the in-memory map
+    private void flush(Context context) throws IOException, InterruptedException {
+        for (Map.Entry<String, Map<String, Integer>> wordEntry : wordCounts.entrySet()) {
+            String word = wordEntry.getKey();
+            Map<String, Integer> docMap = wordEntry.getValue();
+
+            for (Map.Entry<String, Integer> docEntry : docMap.entrySet()) {
+                // Set output key as the word
+                wordText.set(word);
+                // Set output value as "filename:count"
+                valueText.set(docEntry.getKey() + ":" + docEntry.getValue());
+                // Emit the key-value pair
+                context.write(wordText, valueText);
             }
-            context.write(new Text(occ.getWord()), new Text(valueBuilder.toString()));
         }
+        // Clear memory after flush
+        wordCounts.clear();
     }
-*/
-// Second solution --> The output is sent only one time, during the cleanup method in the form <word, doc1:count1 > ... <word, docN:countN>
     @Override
-    public void cleanup(Context context) throws IOException, InterruptedException {
-        for (WordOccurrences occ : wordCounts.values()) {
-            for (Map.Entry<String, Integer> entry : occ.getDocCounts().entrySet()) {
-                context.write(new Text(occ.getWord()), new Text(entry.getKey() + ":" + entry.getValue()));
-            }
-        }
+    protected void cleanup(Context context) throws IOException, InterruptedException {
+        // Flush any remaining data in memory at the end of the task
+        flush(context);
     }
 }
