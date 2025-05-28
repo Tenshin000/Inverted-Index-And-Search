@@ -443,10 +443,10 @@ def main():
     parser.add_argument('--log-local', help="Local folder to save log file")
     parser.add_argument('--log-hdfs', help="HDFS folder to save log file")
     args = parser.parse_args()
-
+    
+    start_time = time.time()
     engine = InvertedIndexSearch(num_partitions=args.num_partitions)
     try:
-        start_time = time.time()
         printer.info("Spark Inverted Index Builder Application Started ...")
         use_local_output = bool(args.output)
 

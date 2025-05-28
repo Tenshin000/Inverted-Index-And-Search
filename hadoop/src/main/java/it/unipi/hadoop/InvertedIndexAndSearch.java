@@ -191,6 +191,7 @@ public class InvertedIndexAndSearch {
         Path outputPath = resolveOutputPath(fs, defaultOutputRoot, outputHdfsRoot, outputLocal);
 
         // --- JOB CONFIGURATION in main ---
+        long startTime = System.currentTimeMillis();
         Job job = Job.getInstance(conf, "HadoopInvertedIndexSearch");
         job.setJarByClass(InvertedIndexAndSearch.class);
 
@@ -227,8 +228,6 @@ public class InvertedIndexAndSearch {
 
         job.setInputFormatClass(MyCombineTextInputFormat.class);
         CombineTextInputFormat.setMaxInputSplitSize(job, 134217728);
-
-        long startTime = System.currentTimeMillis();
 
         // submit job
         boolean success = job.waitForCompletion(true);

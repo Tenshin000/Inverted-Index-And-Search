@@ -455,16 +455,11 @@ def main():
     parser.add_argument('--log-hdfs', help="HDFS folder to save log file")
     args = parser.parse_args()
 
-    change_log = True
-    if args.output:
-        change_log = False
-    elif args.output_hdfs:
-        change_log = False
-
+    start_time = time.time()
     engine = InvertedIndexSearch(num_partitions=args.num_partitions)
     try:
         printer.info("Spark Inverted Index Builder Application Started ...")
-        start_time = time.time()
+        
         use_local_output = bool(args.output)
 
         # Determine input paths
