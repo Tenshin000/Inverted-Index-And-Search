@@ -1,4 +1,5 @@
 import argparse
+from collections import Counter
 import logging
 import os
 import psutil
@@ -8,7 +9,7 @@ import sys
 import time
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import input_file_name, explode, split, lower, regexp_replace, regexp_extract, col, concat_ws, collect_list, concat, lit, sort_array
+
 
 #----------------------------#
 #        CONFIGURATION       #
@@ -52,14 +53,22 @@ def choose_input_paths(sc, limit_mb=None, base_dir=DATA_DIR):
     """Efficiently select HDFS input files up to limit_mb, or all if None."""
     if not hdfs_dir_exists(sc, base_dir):
         raise HDFSPathNotFoundError(f"Data directory '{base_dir}' does not exist.")
+    
+    def is_clean(path):
+        name = os.path.basename(path)
+        base, ext = os.path.splitext(name)
+        return "," not in base and "." not in base and ext == ".txt"
 
-    if limit_mb is None:
-        return [f"{base_dir.rstrip('/')}/"]
-
-    mb_bytes = limit_mb * 1024 * 1024
+    all_files = list_hdfs_files(sc, base_dir)
+    clean_files = [(f, sz) for f, sz in all_files if is_clean(f)]
 
     # List all files once, sort by descending size to fill the limit faster
-    files = sorted(list_hdfs_files(sc, base_dir), key=lambda x: -x[1])
+    files = sorted(clean_files, key=lambda x: -x[1])
+
+    if limit_mb is None:
+        return [f for f, _ in files]
+
+    mb_bytes = limit_mb * 1024 * 1024    
 
     selected = []
     total = 0
@@ -125,12 +134,13 @@ class InvertedIndexSearch:
     num_partitions: int
 
     # Methods
-    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None, change_log=False):
+    def __init__(self, app_name="RDDSparkInvertedIndexSearch", num_partitions=None):
         """Configure Spark and initialize SparkSession."""
         conf = SparkConf() \
                 .setAppName(app_name) \
                 .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
                 .set("spark.kryoserializer.buffer.max", "512m") \
+                .set("spark.sql.shuffle.partitions", "200") \
                 .set("spark.speculation", "true") \
                 .set("spark.speculation.multiplier", "1.5") \
                 .set("spark.eventLog.enabled", "true") \
@@ -144,59 +154,84 @@ class InvertedIndexSearch:
         else:
             self.num_partitions = None
 
-    @staticmethod
-    def _tokenize(text):
-        """
-        Simple tokenizer: convert to lowercase, remove punctuation, split on whitespace.
-        """
-        cleaned = re.sub(r"[\W_]+", " ", text.lower())
-        return cleaned.split()
-
     def build_index(self, input_paths, output_path, output_format="text"):
-        """
-        Build inverted index and save in specified format: text, json, or parquet.
-        """
-        tokenize = InvertedIndexSearch._tokenize
+        """Build inverted index and save it in text, JSON, or Parquet format."""
+        # Read input files as (path, content) pairs
+        if isinstance(input_paths, str):
+            input_paths = [input_paths]
+
+        rdds = [self.sc.wholeTextFiles(path) for path in input_paths]
+        files_rdd = self.sc.union(rdds)
         
-        paths = ",".join(input_paths)
-        files_rdd = self.sc.wholeTextFiles(paths)
+        # Tokenize and locally count words in each document (in-mapper combiner)
+        def tokenize_and_count(pair):
+            path, text = pair
+            basename = os.path.basename(path)
+            words = re.findall(r"\b\w+\b", text.lower()) # Extract lowercase words
+            counts = Counter(words)
+            # Emit ((word, filename), count)
+            return [((word, basename), count) for word, count in counts.items()]
 
-        # ((word, filename), 1)
-        pairs = files_rdd.flatMap(lambda fc: [((word, os.path.basename(fc[0])), 1)
-                                            for word in tokenize(fc[1])])
+        # Apply flatMap to tokenize and count words locally
+        word_file_rdd = files_rdd.flatMap(tokenize_and_count).coalesce(200)
 
-        counts = pairs.reduceByKey(lambda x, y: x + y)
+        # Reduce duplicates for the same (word, file) pair
+        word_file_combined = word_file_rdd.reduceByKey(lambda a, b: a + b).coalesce(200)
 
-        word_file_counts = counts.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
+        # Map to (word, (filename, count)) structure
+        word_to_posting = word_file_combined.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
 
-        grouped = word_file_counts.groupByKey()
+        # Group all postings per word using combineByKey for efficiency
+        postings = word_to_posting.combineByKey(
+            lambda x: [x],
+            lambda acc, x: acc + [x],
+            lambda acc1, acc2: acc1 + acc2,
+        ).coalesce(200)
 
+        formatted = postings.map(
+            lambda wc_list: wc_list[0] + "\t" +
+                            "\t".join(f"{fname}:{cnt}" for fname, cnt in wc_list[1])
+        ).coalesce(200)
+
+        # Save the result in the specified output format
         if output_format == "text":
-            formatted = grouped.map(
-                lambda wc: f"{wc[0]}\t" + '\t'.join(f"{fn}:{cnt}" for fn, cnt in sorted(wc[1])))
-            formatted.saveAsTextFile(output_path)
-
-        elif output_format == "json":
-            import json
-            json_rdd = grouped.map(lambda wc: json.dumps({
-                "word": wc[0],
-                "occurrences": [{"file": fn, "count": cnt} for fn, cnt in sorted(wc[1])]
-            }))
-            json_rdd.saveAsTextFile(output_path)
-
-        elif output_format == "parquet":
-            from pyspark.sql import Row
-            df = self.spark.createDataFrame(
-                grouped.flatMap(lambda wc: [
-                    Row(word=wc[0], file=fn, count=cnt) for fn, cnt in wc[1]
-                ])
-            )
-            df.write.parquet(output_path)
-
+            if self.num_partitions is not None:
+                if self.num_partitions <= 1:
+                    formatted.coalesce(1).saveAsTextFile(output_path)
+                else:
+                    formatted.repartition(self.num_partitions).saveAsTextFile(output_path)
+            else:
+                 formatted.saveAsTextFile(output_path)
         else:
-            raise ValueError(f"Unsupported output format: {output_format}")
-
-        print(f"Index saved to {output_path} in {output_format} format.")
+            df = self.spark.createDataFrame(
+                formatted.map(lambda line: line.split("\t", 1))
+                        .map(lambda parts: {"word": parts[0], "postings": parts[1]})
+            )
+            mode = "overwrite"
+            if output_format == "json":
+                if self.num_partitions is not None:
+                    if self.num_partitions <= 1:
+                        df.coalesce(1).write.mode(mode).json(output_path)
+                    else:
+                        df.repartition(self.num_partitions).write.mode(mode).json(output_path)
+                else:
+                    df.write.mode(mode).json(output_path)
+            elif output_format == "parquet":
+                if self.num_partitions is not None:
+                    if self.num_partitions <= 1:
+                        df.coalesce(1).write.mode(mode).parquet(output_path)
+                    else:
+                        df.repartition(self.num_partitions).write.mode(mode).parquet(output_path)
+                else:
+                    df.write.mode(mode).parquet(output_path)
+            else:
+                if self.num_partitions is not None:
+                    if self.num_partitions <= 1:
+                        formatted.coalesce(1).saveAsTextFile(output_path)
+                    else:
+                        formatted.repartition(self.num_partitions).saveAsTextFile(output_path)
+                else:
+                    formatted.saveAsTextFile(output_path)
 
     def get_hdfs_dir_size(self, path):
         """Compute total size of all files in an HDFS path."""
@@ -256,7 +291,13 @@ class InvertedIndexSearch:
             "totalShuffleRead": 0,
             "totalShuffleWrite": 0,
             "onHeapExecMem": 0,
-            "offHeapExecMem": 0
+            "offHeapExecMem": 0,
+            "ProcessTreeJVMRSSMemory": 0,
+            "ProcessTreePythonRSSMemory": 0,
+            "ProcessTreeOtherRSSMemory": 0,
+            "ProcessTreeJVMVMemory": 0,
+            "ProcessTreePythonVMemory": 0,
+            "ProcessTreeOtherVMemory": 0
         }
 
         for e in execs:
@@ -273,6 +314,12 @@ class InvertedIndexSearch:
             peak = e.get("peakMemoryMetrics", {})
             executor_agg["onHeapExecMem"] += peak.get("OnHeapExecutionMemory", 0)
             executor_agg["offHeapExecMem"] += peak.get("OffHeapExecutionMemory", 0)
+            executor_agg["ProcessTreeJVMRSSMemory"] += peak.get("ProcessTreeJVMRSSMemory", 0)
+            executor_agg["ProcessTreePythonRSSMemory"] += peak.get("ProcessTreePythonRSSMemory", 0)
+            executor_agg["ProcessTreeOtherRSSMemory"] += peak.get("ProcessTreeOtherRSSMemory", 0)
+            executor_agg["ProcessTreeJVMVMemory"] += peak.get("ProcessTreeJVMVMemory", 0)
+            executor_agg["ProcessTreePythonVMemory"] += peak.get("ProcessTreePythonVMemory", 0)
+            executor_agg["ProcessTreeOtherVMemory"] += peak.get("ProcessTreeOtherVMemory", 0)
 
         stages_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages"
         stages = requests.get(stages_url).json()
@@ -300,6 +347,18 @@ class InvertedIndexSearch:
                 stage_memory_spilled_b += metrics.get("memoryBytesSpilled", 0)
                 stage_disk_spilled_b += metrics.get("diskBytesSpilled",0)
 
+        physical_mem_snapshot_mb = (
+            executor_agg["ProcessTreeJVMRSSMemory"] +
+            executor_agg["ProcessTreePythonRSSMemory"] +
+            executor_agg["ProcessTreeOtherRSSMemory"]
+        ) / MB
+
+        virtual_mem_snapshot_mb = (
+            executor_agg["ProcessTreeJVMVMemory"] +
+            executor_agg["ProcessTreePythonVMemory"] +
+            executor_agg["ProcessTreeOtherVMemory"]
+        ) / MB
+
         rdd_blocks = executor_agg["rddBlocks"]
         memory_used_mb = executor_agg["memoryUsed"] / MB
         max_memory_used_mb = executor_agg["maxMemory"] / MB
@@ -325,6 +384,8 @@ class InvertedIndexSearch:
         log_and_store(f"Total tasks launched          : {total_tasks}")
         log_and_store(f"Tasks completed               : {completed_tasks}")
         log_and_store(f"Total tasks duration          : {duration_s:.3f} seconds")
+        log_and_store(f"Physical Memory Snapshot      : {physical_mem_snapshot_mb:.2f} MB")
+        log_and_store(f"Virtual Memory Snapshot       : {virtual_mem_snapshot_mb:.2f} MB")
         log_and_store(f"Driver CPU time               : {driver_cpu_time:.3f} seconds")
         log_and_store(f"Total CPU time                : {total_stage_cpu_s:.3f} seconds")
         log_and_store(f"Total GC time                 : {gc_time_s:.3f} seconds")
@@ -400,7 +461,7 @@ def main():
     elif args.output_hdfs:
         change_log = False
 
-    engine = InvertedIndexSearch(num_partitions=args.num_partitions,change_log=change_log)
+    engine = InvertedIndexSearch(num_partitions=args.num_partitions)
     try:
         printer.info("Spark Inverted Index Builder Application Started ...")
         start_time = time.time()
@@ -452,7 +513,7 @@ def main():
             log_dir = LOG_DIR
         
         # Build the index
-        engine.build_index(input_paths, output_path, output_format=args.format)
+        engine.build_index(input_paths, output_path)
         printer.info(f"Index saved to {output_path}")
         end_time = time.time()
         execution_time = end_time - start_time

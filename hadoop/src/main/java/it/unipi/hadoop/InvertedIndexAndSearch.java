@@ -5,6 +5,9 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.CounterGroup;
+import org.apache.hadoop.mapreduce.Counters;
+import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.lib.input.CombineTextInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
@@ -17,14 +20,13 @@ import java.util.Comparator;
 import java.util.List;
 
 public class InvertedIndexAndSearch {
-
     // Helper methods
     private static List<Path> resolveInputPaths(FileSystem fs,
-                                               String mode,
-                                               String localFolder,
-                                               String hdfsFolder,
-                                               List<String> rawInputs,
-                                               String defaultInputDir) throws IOException {
+            String mode,
+            String localFolder,
+            String hdfsFolder,
+            List<String> rawInputs,
+            String defaultInputDir) throws IOException {
         List<Path> paths = new ArrayList<>();
         switch (mode) {
             case "local-folder":
@@ -64,11 +66,14 @@ public class InvertedIndexAndSearch {
     }
 
     private static List<Path> applyLimit(FileSystem fs,
-                                         List<Path> paths,
-                                         long limitBytes) throws IOException {
+            List<Path> paths,
+            long limitBytes) throws IOException {
         Collections.sort(paths, Comparator.comparingLong(p -> {
-            try { return fs.getFileStatus(p).getLen(); }
-            catch (IOException e) { return Long.MAX_VALUE; }
+            try {
+                return fs.getFileStatus(p).getLen();
+            } catch (IOException e) {
+                return Long.MAX_VALUE;
+            }
         }));
         List<Path> limited = new ArrayList<>();
         long sum = 0;
@@ -85,9 +90,9 @@ public class InvertedIndexAndSearch {
     }
 
     private static Path resolveOutputPath(FileSystem fs,
-                                          String defaultHdfsRoot,
-                                          String customHdfsRoot,
-                                          String outputLocal) throws IOException {
+            String defaultHdfsRoot,
+            String customHdfsRoot,
+            String outputLocal) throws IOException {
         String root = customHdfsRoot != null ? customHdfsRoot : defaultHdfsRoot;
         Path base = new Path(root);
         String baseName = "output-hadoop";
@@ -121,15 +126,16 @@ public class InvertedIndexAndSearch {
         long limitBytes = -1;
         String outputLocal = null;
         String outputHdfsRoot = null;
-        boolean useStateful = true;      // default: In-Mapper Combiner
-        boolean useCombiner = false;     // only with --combiner
+        boolean useStateful = true; // default: In-Mapper Combiner
+        boolean useCombiner = false; // only with --combiner
 
         // parse arguments
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--reducers":
                     int r = Integer.parseInt(args[++i]);
-                    if (r > 0) numReducers = r;
+                    if (r > 0)
+                        numReducers = r;
                     break;
                 case "--input-folder":
                     inputMode = "local-folder";
@@ -185,7 +191,6 @@ public class InvertedIndexAndSearch {
         Path outputPath = resolveOutputPath(fs, defaultOutputRoot, outputHdfsRoot, outputLocal);
 
         // --- JOB CONFIGURATION in main ---
-        long startTime = System.currentTimeMillis();
         Job job = Job.getInstance(conf, "HadoopInvertedIndexSearch");
         job.setJarByClass(InvertedIndexAndSearch.class);
 
@@ -223,14 +228,15 @@ public class InvertedIndexAndSearch {
         job.setInputFormatClass(MyCombineTextInputFormat.class);
         CombineTextInputFormat.setMaxInputSplitSize(job, 134217728);
 
+        long startTime = System.currentTimeMillis();
+
         // submit job
         boolean success = job.waitForCompletion(true);
 
-        // execution time 
-        long endTime   = System.currentTimeMillis();
+        // execution time
+        long endTime = System.currentTimeMillis();
         double executionTime = (endTime - startTime) / 1000.0;
-        System.out.printf("Execution Time: %.2f s%n", executionTime);
-        
+        System.out.printf("Execution Time: %.3f s%n", executionTime);
         System.exit(success ? 0 : 1);
     }
 }

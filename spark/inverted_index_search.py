@@ -124,7 +124,7 @@ class InvertedIndexSearch:
     num_partitions: int
 
     # Methods
-    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None, change_log=False):
+    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None):
         """Configure Spark and initialize SparkSession."""
         conf = SparkConf() \
                 .setAppName(app_name) \
@@ -182,9 +182,6 @@ class InvertedIndexSearch:
             .filter(col('word') != '')
         )
 
-        if self.num_partitions is not None:
-            tokens = tokens.repartition(self.num_partitions)
-
         # Phase 2: Counts and Postings (Reduce-Like)
         counts = tokens.groupBy('word', 'filename').count()
         postings = (
@@ -195,9 +192,6 @@ class InvertedIndexSearch:
             .agg(sort_array(collect_list(col('posting'))).alias('postings_list'))
         )
 
-        if self.num_partitions is not None:
-            postings = postings.repartition(self.num_partitions) 
-
         # Phase 3: Write Output
         if output_format == 'text':
             formatted = postings.select(
@@ -205,8 +199,12 @@ class InvertedIndexSearch:
                           concat_ws('\t', col('postings_list')))
             )
             if self.num_partitions is not None:
-                formatted = formatted.repartition(self.num_partitions) 
-            formatted.write.text(output_path)
+                if self.num_partitions <= 1:
+                    formatted.coalesce(1).write.text(output_path)
+                else:
+                    formatted.repartition(self.num_partitions).write.text(output_path)
+            else:
+                 formatted.write.text(output_path)
         elif output_format == 'json':
             postings.selectExpr("word", "postings_list as docs").write.json(output_path)
         elif output_format == 'parquet':
@@ -217,8 +215,12 @@ class InvertedIndexSearch:
                           concat_ws('\t', col('postings_list')))
             )
             if self.num_partitions is not None:
-                formatted = formatted.repartition(self.num_partitions) 
-            formatted.write.text(output_path)
+                if self.num_partitions <= 1:
+                    formatted.coalesce(1).write.text(output_path)
+                else:
+                    formatted.repartition(self.num_partitions).write.text(output_path)
+            else:
+                 formatted.write.text(output_path)
 
     def get_hdfs_dir_size(self, path):
         """Compute total size of all files in an HDFS path."""
@@ -278,7 +280,13 @@ class InvertedIndexSearch:
             "totalShuffleRead": 0,
             "totalShuffleWrite": 0,
             "onHeapExecMem": 0,
-            "offHeapExecMem": 0
+            "offHeapExecMem": 0,
+            "ProcessTreeJVMRSSMemory": 0,
+            "ProcessTreePythonRSSMemory": 0,
+            "ProcessTreeOtherRSSMemory": 0,
+            "ProcessTreeJVMVMemory": 0,
+            "ProcessTreePythonVMemory": 0,
+            "ProcessTreeOtherVMemory": 0
         }
 
         for e in execs:
@@ -295,6 +303,12 @@ class InvertedIndexSearch:
             peak = e.get("peakMemoryMetrics", {})
             executor_agg["onHeapExecMem"] += peak.get("OnHeapExecutionMemory", 0)
             executor_agg["offHeapExecMem"] += peak.get("OffHeapExecutionMemory", 0)
+            executor_agg["ProcessTreeJVMRSSMemory"] += peak.get("ProcessTreeJVMRSSMemory", 0)
+            executor_agg["ProcessTreePythonRSSMemory"] += peak.get("ProcessTreePythonRSSMemory", 0)
+            executor_agg["ProcessTreeOtherRSSMemory"] += peak.get("ProcessTreeOtherRSSMemory", 0)
+            executor_agg["ProcessTreeJVMVMemory"] += peak.get("ProcessTreeJVMVMemory", 0)
+            executor_agg["ProcessTreePythonVMemory"] += peak.get("ProcessTreePythonVMemory", 0)
+            executor_agg["ProcessTreeOtherVMemory"] += peak.get("ProcessTreeOtherVMemory", 0)
 
         stages_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages"
         stages = requests.get(stages_url).json()
@@ -322,6 +336,18 @@ class InvertedIndexSearch:
                 stage_memory_spilled_b += metrics.get("memoryBytesSpilled", 0)
                 stage_disk_spilled_b += metrics.get("diskBytesSpilled",0)
 
+        physical_mem_snapshot_mb = (
+            executor_agg["ProcessTreeJVMRSSMemory"] +
+            executor_agg["ProcessTreePythonRSSMemory"] +
+            executor_agg["ProcessTreeOtherRSSMemory"]
+        ) / MB
+
+        virtual_mem_snapshot_mb = (
+            executor_agg["ProcessTreeJVMVMemory"] +
+            executor_agg["ProcessTreePythonVMemory"] +
+            executor_agg["ProcessTreeOtherVMemory"]
+        ) / MB
+
         rdd_blocks = executor_agg["rddBlocks"]
         memory_used_mb = executor_agg["memoryUsed"] / MB
         max_memory_used_mb = executor_agg["maxMemory"] / MB
@@ -347,6 +373,8 @@ class InvertedIndexSearch:
         log_and_store(f"Total tasks launched          : {total_tasks}")
         log_and_store(f"Tasks completed               : {completed_tasks}")
         log_and_store(f"Total tasks duration          : {duration_s:.3f} seconds")
+        log_and_store(f"Physical Memory Snapshot      : {physical_mem_snapshot_mb:.2f} MB")
+        log_and_store(f"Virtual Memory Snapshot       : {virtual_mem_snapshot_mb:.2f} MB")
         log_and_store(f"Driver CPU time               : {driver_cpu_time:.3f} seconds")
         log_and_store(f"Total CPU time                : {total_stage_cpu_s:.3f} seconds")
         log_and_store(f"Total GC time                 : {gc_time_s:.3f} seconds")
@@ -416,16 +444,10 @@ def main():
     parser.add_argument('--log-hdfs', help="HDFS folder to save log file")
     args = parser.parse_args()
 
-    change_log = True
-    if args.output:
-        change_log = False
-    elif args.output_hdfs:
-        change_log = False
-
-    engine = InvertedIndexSearch(num_partitions=args.num_partitions,change_log=change_log)
+    engine = InvertedIndexSearch(num_partitions=args.num_partitions)
     try:
-        printer.info("Spark Inverted Index Builder Application Started ...")
         start_time = time.time()
+        printer.info("Spark Inverted Index Builder Application Started ...")
         use_local_output = bool(args.output)
 
         # Determine input paths
