@@ -83,7 +83,6 @@ public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Te
         // Clear memory after flush
         wordCounts.clear();
     }
-
     @Override
     protected void cleanup(Context context) throws IOException, InterruptedException {
         // Flush any remaining data in memory at the end of the task

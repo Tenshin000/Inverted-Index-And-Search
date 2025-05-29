@@ -1,3 +1,6 @@
 com/example/hadoop/TokenizerMapper.class
-com/example/hadoop/InvertedIndexAndSearch.class
+com/example/hadoop/TokenizerMapperStateful.class
+com/example/hadoop/TokenizerMapperStateful$WordOccurrences.class
 com/example/hadoop/DocumentCountReducer.class
+com/example/hadoop/CombinerDocCounts.class
+com/example/hadoop/InvertedIndexAndSearch.class
