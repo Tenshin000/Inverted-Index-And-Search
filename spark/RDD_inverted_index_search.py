@@ -10,7 +10,6 @@ import time
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
 
-
 #----------------------------#
 #        CONFIGURATION       #
 #----------------------------#
