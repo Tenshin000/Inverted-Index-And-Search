@@ -167,7 +167,7 @@ class InvertedIndexSearch:
         result = dfs[0]
         for df in dfs[1:]:
             result = result.union(df)
-        result = result.coalesce(64)
+        
         return result
 
     def build_index(self, input_paths, output_path, output_format='text'):
