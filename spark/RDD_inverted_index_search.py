@@ -18,6 +18,7 @@ HDFS_BASE                 = 'hdfs:///user/hadoop/'
 DATA_DIR                  = HDFS_BASE + 'inverted-index/data'
 OUTPUT_BASE               = HDFS_BASE + 'inverted-index/output/'
 LOG_DIR                   = HDFS_BASE + 'inverted-index/log/'
+MAX_TASKS                 = 500
 
 logging.basicConfig(
     level=logging.INFO,
@@ -140,7 +141,6 @@ class InvertedIndexSearch:
                 .setAppName(app_name) \
                 .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
                 .set("spark.kryoserializer.buffer.max", "512m") \
-                .set("spark.sql.shuffle.partitions", "200") \
                 .set("spark.speculation", "true") \
                 .set("spark.speculation.multiplier", "1.5") \
                 .set("spark.eventLog.enabled", "true") \
@@ -155,83 +155,74 @@ class InvertedIndexSearch:
             self.num_partitions = None
 
     def build_index(self, input_paths, output_path, output_format="text"):
-        """Build inverted index and save it in text, JSON, or Parquet format."""
-        # Read input files as (path, content) pairs
+        """Build inverted index from text files and save in specified format."""
+
+        # Ensure input_paths is a list
         if isinstance(input_paths, str):
             input_paths = [input_paths]
 
+        # Reads each file in path returning an RDD of (filePath, fileContent) pairs
         rdds = [self.sc.wholeTextFiles(path) for path in input_paths]
+        # Joins all read files into a single RDD, without shuffling (narrow)
         files_rdd = self.sc.union(rdds)
-        
-        # Tokenize and locally count words in each document (in-mapper combiner)
+
+        # Tokenize and count words per document
         def tokenize_and_count(pair):
+            """Grouping the count per document here avoids sending single occurrences word-by-word to the cluster, """
+            """reducing the number of lines emitted (less network overhead)."""
             path, text = pair
+            # Take the filename
             basename = os.path.basename(path)
-            words = re.findall(r"\b\w+\b", text.lower()) # Extract lowercase words
+            # Converts text to lowercase and uses regex to take only words and numbers
+            words = re.findall(r"\b\w+\b", text.lower().replace("_", " "))
+            # Builds a local Counter to count the occurrences of each word in that document
             counts = Counter(words)
-            # Emit ((word, filename), count)
-            return [((word, basename), count) for word, count in counts.items()]
+            # Returns a list of tuples (word, (filename, count))
+            return [(word, {basename: cnt}) for word, cnt in counts.items()]
 
-        # Apply flatMap to tokenize and count words locally
-        word_file_rdd = files_rdd.flatMap(tokenize_and_count).coalesce(200)
+        tasks = MAX_TASKS
+        # Take a list of ((word, filename), count)
+        intermediate = files_rdd.coalesce(tasks).flatMap(tokenize_and_count)
+        
+        tasks = MAX_TASKS // 4
+        
+        postings = intermediate.coalesce(tasks).aggregateByKey(
+            zeroValue={},  # empty dict as starting point
+            # seqFunc: adds dict d to dict acc
+            seqFunc=lambda acc, d: {**acc, **{k: acc.get(k, 0) + d[k] for k in d}},
+            # combFunc: merges two dicts from different partitions
+            combFunc=lambda acc1, acc2: {**acc1, **{k: acc1.get(k, 0) + acc2[k] for k in acc2}}
+        )
 
-        # Reduce duplicates for the same (word, file) pair
-        word_file_combined = word_file_rdd.reduceByKey(lambda a, b: a + b).coalesce(200)
-
-        # Map to (word, (filename, count)) structure
-        word_to_posting = word_file_combined.map(lambda wc: (wc[0][0], (wc[0][1], wc[1])))
-
-        # Group all postings per word using combineByKey for efficiency
-        postings = word_to_posting.combineByKey(
-            lambda x: [x],
-            lambda acc, x: acc + [x],
-            lambda acc1, acc2: acc1 + acc2,
-        ).coalesce(200)
-
+        # Format output as tab-separated lines
         formatted = postings.map(
-            lambda wc_list: wc_list[0] + "\t" +
-                            "\t".join(f"{fname}:{cnt}" for fname, cnt in wc_list[1])
-        ).coalesce(200)
+            lambda wc: wc[0] + "\t" + "\t".join(f"{fname}:{cnt}" for fname, cnt in wc[1].items())
+        )
 
-        # Save the result in the specified output format
+        # Repartition or coalesce if needed
+        if self.num_partitions is not None:
+            final_rdd = (formatted.coalesce(1) if self.num_partitions <= 1 
+                        else formatted.repartition(self.num_partitions))
+        else:
+            final_rdd = formatted
+
+        # Save output
         if output_format == "text":
-            if self.num_partitions is not None:
-                if self.num_partitions <= 1:
-                    formatted.coalesce(1).saveAsTextFile(output_path)
-                else:
-                    formatted.repartition(self.num_partitions).saveAsTextFile(output_path)
-            else:
-                 formatted.saveAsTextFile(output_path)
+            final_rdd.saveAsTextFile(output_path)
         else:
             df = self.spark.createDataFrame(
-                formatted.map(lambda line: line.split("\t", 1))
+                final_rdd.map(lambda line: line.split("\t", 1))
                         .map(lambda parts: {"word": parts[0], "postings": parts[1]})
             )
+            writer = df.coalesce(1) if self.num_partitions == 1 else (
+                    df.repartition(self.num_partitions) if self.num_partitions else df)
             mode = "overwrite"
             if output_format == "json":
-                if self.num_partitions is not None:
-                    if self.num_partitions <= 1:
-                        df.coalesce(1).write.mode(mode).json(output_path)
-                    else:
-                        df.repartition(self.num_partitions).write.mode(mode).json(output_path)
-                else:
-                    df.write.mode(mode).json(output_path)
+                writer.write.mode(mode).json(output_path)
             elif output_format == "parquet":
-                if self.num_partitions is not None:
-                    if self.num_partitions <= 1:
-                        df.coalesce(1).write.mode(mode).parquet(output_path)
-                    else:
-                        df.repartition(self.num_partitions).write.mode(mode).parquet(output_path)
-                else:
-                    df.write.mode(mode).parquet(output_path)
+                writer.write.mode(mode).parquet(output_path)
             else:
-                if self.num_partitions is not None:
-                    if self.num_partitions <= 1:
-                        formatted.coalesce(1).saveAsTextFile(output_path)
-                    else:
-                        formatted.repartition(self.num_partitions).saveAsTextFile(output_path)
-                else:
-                    formatted.saveAsTextFile(output_path)
+                final_rdd.saveAsTextFile(output_path)
 
     def get_hdfs_dir_size(self, path):
         """Compute total size of all files in an HDFS path."""
