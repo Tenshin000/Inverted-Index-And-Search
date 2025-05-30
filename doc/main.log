@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  30 MAY 2025 14:36
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  30 MAY 2025 15:33
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -440,7 +440,12 @@ Underfull \hbox (badness 5741) in paragraph at lines 4--5
 \OT1/cmr/m/n/10 to In-tel(R) Xeon(R) Sil-ver 4208 CPU
  []
 
-) (./chapters/Chapter3.tex) (./chapters/Chapter4.tex
+) (./chapters/Chapter3.tex
+
+Package hyperref Warning: Option `colorlinks' has already been used,
+(hyperref)                setting the option has no effect on input line 6.
+
+) (./chapters/Chapter4.tex
 Underfull \hbox (badness 5878) in paragraph at lines 1--1
 []\OT1/cmr/bx/n/14.4 MapReduce and Hadoop
  []
@@ -470,7 +475,7 @@ Here is how much of TeX's memory you used:
  33354 multiletter control sequences out of 15000+600000
  562651 words of font info for 51 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,6n,79p,1237b,634s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,6n,79p,1235b,648s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb><c:/tex
 live/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb><c:/texlive/2024
 /texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb><c:/texlive/2024/texmf-dis
@@ -479,7 +484,7 @@ pe1/public/amsfonts/cm/cmr17.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public
 /amsfonts/cm/cmr7.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/c
 m/cmr9.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb
 >
-Output written on main.pdf (2 pages, 121665 bytes).
+Output written on main.pdf (2 pages, 121551 bytes).
 PDF statistics:
  91 PDF objects out of 1000 (max. 8388607)
  70 compressed objects within 1 object stream
