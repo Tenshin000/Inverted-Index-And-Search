@@ -7,7 +7,7 @@ import sys
 from recover_resources import download_txt_files
 from logs_to_csv_spark import operation_spark
 from logs_to_csv_hadoop import operation_hadoop
-
+from plot import csv_to_plot
 
 # List of log directories to process
 LOG_DIRS = [
@@ -17,13 +17,6 @@ LOG_DIRS = [
     "../log/test-1024MB",
     "../log/test-1583MB",
 ]
-
-def load_script(path, module_name):
-    """Dynamically load a Python script as a module."""
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 def main():
     parser = argparse.ArgumentParser(description="Inverse Index Search CLI")
@@ -35,6 +28,9 @@ def main():
                         help="Process Spark logs into CSV for all test-* folders")
     parser.add_argument("--to-csv-hadoop", action="store_true",
                         help="Process Hadoop logs into CSV for all test-* folders")
+    parser.add_argument("--plot-csv", action="store_true",
+                        help="Plot csv from log folders filtering by given technologies")
+
     args = parser.parse_args()
 
     # BLOCK 1: recover resources into HDFS
@@ -73,8 +69,7 @@ def main():
         print(f"\n=== SPARK: Generating CSV from logs ({total} folders) ===")
         for idx, log_dir in enumerate(LOG_DIRS, start=1):
             print(f"[{idx}/{total}] ➡ Running Spark CSV operation on {log_dir} …")
-            # operation_spark takes (input_folder, output_base)
-            operation_spark(log_dir, log_dir+"/")
+            operation_spark(log_dir, "../log/csv-logs/")
             print(f"[{idx}/{total}] ✓ Spark CSV operation completed for {log_dir}")
 
     # BLOCK 4: process Hadoop logs
@@ -83,9 +78,16 @@ def main():
         print(f"\n=== HADOOP: Generating CSV from logs ({total} folders) ===")
         for idx, log_dir in enumerate(LOG_DIRS, start=1):
             print(f"[{idx}/{total}] ➡ Running Hadoop CSV operation on {log_dir} …")
-            # operation_hadoop takes (input_folder, output_base)
-            operation_hadoop(log_dir, log_dir+"/")
+            operation_hadoop(log_dir, "../log/csv-logs/")
             print(f"[{idx}/{total}] ✓ Hadoop CSV operation completed for {log_dir}")
+
+    # BLOCK 5: plot logs
+    if args.plot_csv:
+        technologies = ["spark", "hadoop", "rdd-spark", "noimc-hadoop"]
+
+        print(f"\n=== PLOTTING: Plotting metrics for technologies {technologies} in {len(LOG_DIRS)} folders ===")
+        csv_to_plot()
+        print("✓ Plotting completed")                     
 
 if __name__ == "__main__":
     main()

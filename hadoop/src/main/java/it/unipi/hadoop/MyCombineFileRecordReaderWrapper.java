@@ -3,9 +3,9 @@ package it.unipi.hadoop;
 import java.io.IOException;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.LongWritable;      // <-- IMPORT LONGWRITABLE
-import org.apache.hadoop.io.Text;              // <-- IMPORT TEXT
-import org.apache.hadoop.mapreduce.InputSplit; // <-- IMPORT INPUTSPLIT
+import org.apache.hadoop.io.LongWritable;      
+import org.apache.hadoop.io.Text;              
+import org.apache.hadoop.mapreduce.InputSplit; 
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.CombineFileSplit;

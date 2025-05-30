@@ -1,5 +1,110 @@
 \section{MapReduce and Hadoop code}
-The system uses \textbf{MapReduce}, via the \textbf{Hadoop} framework, to process large-scale data efficiently. The Hadoop cluster is optimized for virtual machines with limited memory through customized YARN and MapReduce settings. YARN manages resources and memory (up to 5 GB per node), while MapReduce configurations allocate 2048 MB to key tasks, with JVM heaps limited ot 1536 MB. 
+The system uses \textbf{MapReduce}, via the \textbf{Hadoop} framework, to process large-scale data efficiently. The Hadoop cluster is optimized for virtual machines with limited memory through customized YARN and MapReduce settings. YARN manages resources and memory (up to 5 GB per node), while MapReduce configurations allocate 2048 MB to key tasks, with JVM heaps limited ot 1536 MB.
 
-...
+\newpage 
+
+%PseudoCode
+\lstdefinelanguage{PseudoCode}{
+	keywords={class, method, for, all, in, do, end, Emit, if, else, then},
+	sensitive=true,
+	morecomment=[l]{//},
+	morecomment=[s]{/}{/},
+	morestring=[b]",
+	keywordstyle=\bfseries\color{blue},
+	commentstyle=\color{gray}\itshape,
+	stringstyle=\color{red},
+	basicstyle=\ttfamily\small,
+	numbers=left,
+	numberstyle=\tiny\color{gray},
+	stepnumber=1,
+	numbersep=5pt,
+	showspaces=false,
+	showstringspaces=false,
+	tabsize=2,
+	breaklines=true,
+	breakatwhitespace=true,
+	escapeinside={(@}{@)}
+}
+\begin{center}
+	\begin{minipage}{\linewidth}
+		\begin{lstlisting}[language=PseudoCode]
+			class TokenizerMapperStateful
+			
+			method initialize()
+			word_counts <= New Empty AssociativeArray()
+			end method
+			
+			method map(offset o, doc d)
+			Filename <= retrieve_file_name()
+			
+			for all term t in doc d do
+			if word_counts[t] does not contain Filename then
+			word_counts[t][Filename] <= 1
+			else
+			word_counts[t][Filename] <= word_counts[t][Filename] + 1
+			end if
+			end for
+			
+			if word_counts.size() > FLUSH_THRESHOLD then
+			flush(context)
+			end if
+			end method
+			
+			method flush(context)
+			for each word in word_counts do
+			for each filename in word_counts[word] do
+			value <= filename + ":" + word_counts[word][filename]
+			emit(word, value)
+			end for
+			end for
+			clear word_counts
+			end method
+			
+			method cleanup(context)
+			flush(context)
+			end method
+			
+			end class
+		\end{lstlisting}
+		\captionof{figure}{Stateful Mapper PseudoCode}
+		\label{fig:pseudocode-stateful-mapper}
+	\end{minipage}
+\end{center}
+\vspace{-1em}
+\begin{center}
+	\begin{minipage}{\linewidth}
+		\begin{lstlisting}[language=PseudoCode]
+			class TokenizerMapper
+			method map(offset o, doc d)
+			Filename <= retrieve_file_name()
+			for all term t in doc d do
+			emit(term t, filename + ":1")
+			end for
+			end method
+			end class
+		\end{lstlisting}
+		\captionof{figure}{Stateless Mapper PseudoCode}
+		\label{fig:pseudocode-stateless-mapper}
+	\end{minipage}
+\end{center}
+
+\columnbreak
+
+The application is structured to support two interchangeable variants of the MapReduce job: one using a classic \textbf{mapper with an optional combiner} and one based on an \textbf{statefull in-mapper combiner} approach. This modularity is achieved by dynamically selecting the Mapper class at runtime based on command-line flags, improving flexibility and maintainability. 
+
+Hadoop struggles with many small files, as each one generates a separate task using FileInputSplit, leading to significant overhead. To address this, we use \textbf{CombineFileSplit}, which merges multiple small files into a single input split, reducing the number of map tasks and improving efficiency. However, CombineFileSplit introduces a challenge: determining which file the Mapper is currently reading.  
+
+In Hadoop, the CombineFileInputFormat class does not know by itself how to read each individual file within a CombineFileSplit. For this reason, it requires a \textbf{custom RecordReader} for each combined file. This is the job of \textbf{MyCombineTextInputFormat}.
+
+\textbf{MyCombineFileRecordReaderWrapper} is a wrapper around LineRecordReader, which reads one line at a time as in a normal Hadoop job. Its main function, however, is another: i\textbf{t keeps track of the name of the file it is reading from}, using a \textbf{ThreadLocal} object. This is essential for an inverted index, because each word read from the line must be associated with the document (i.e. the file) in which it appears. 
+
+\texttt{TokenizerMapStateful} accumulate counts internally, it maintains a data structure in memory (initialized as emply inside \texttt{setup()} method) that associates each word with a map that counts how many times it appears in each document. The actual counting is of course performed inside the \texttt{map} method. In order not to occupy too much RAM, a \textbf{threshold} has been established. If this is exceeded, which a \textbf{flush} operation is performed, that is, all the words with their counts for the various documents are emitted in the format: $ \langle \textbf{word}, \textbf{doc-id:count} \rangle $. In the end, inside \texttt{cleanup()} the remaining data in memory is emit.
+
+Instead, the \texttt{TokenizerMapper} class takes an input in the key-value form following the structure: $\langle \textbf{offset}, \textbf{doc}\rangle $. Since this version doesn't provide in-mapper combining, the output is simple as well: it's in the form $ \langle \textbf{word}, \textbf{doc-id:1} \rangle $. 
+
+The combiner is implemented in the \texttt{CombinerDocCounts} class. It receives from the mapper a series of key-value pairs in the form described above and performs a local combination for each document, adding the occurrences of the word in the single document. This local aggregation leads to an intermiadate output in the form: $ \langle \textbf{word}, \textbf{doc-id:count} \rangle $.
+
+The \texttt{DocumentCountReducer}, finally, has the purpose of gathering all the occurrences of the same word, of finishing the sum relative to the single documents (since large files can be stored on different nodes) and of formatting the output correctly: 
+
+$ \langle \textbf{word}, [\textbf{doc-1:count}, ..., \textbf{doc-n:count}] \rangle. $
 

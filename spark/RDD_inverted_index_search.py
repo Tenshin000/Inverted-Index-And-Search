@@ -266,7 +266,7 @@ class InvertedIndexSearch:
         app_id = self.sc.applicationId
         host = self.sc._conf.get("spark.driver.host")
         port = self.sc._conf.get("spark.ui.port", "4040")
-        url = f"http://{host}:{port}/api/v1/applications/{app_id}/executors"
+        url = f"http://{host}:{port}/api/v1/applications/{app_id}/executors?include=dead=true"
         execs = requests.get(url).json()
 
         executor_agg = {

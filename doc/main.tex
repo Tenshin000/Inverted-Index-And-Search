@@ -11,8 +11,39 @@
 \usepackage{makecell}
 \usepackage[a4paper, margin=1in]{geometry}
 \usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
 
-\title{Cloud Computing - Project Report \\ \small{Cloud-Busters}}
+
+% Define PseudoCode language
+\lstdefinelanguage{PseudoCode}{
+	morekeywords={class, method, end, for, if, else, then, emit, clear, flush, context, value, retrieve_file_name, initialize, cleanup},
+	sensitive=true,
+	morecomment=[l]{//},
+	morestring=[b]"
+}
+
+% Set default style for listings
+\lstset{
+	language=PseudoCode,
+	basicstyle=\ttfamily\small,
+	keywordstyle=\color{blue}\bfseries,
+	commentstyle=\color{gray},
+	stringstyle=\color{teal},
+	numbers=left,
+	numberstyle=\tiny\color{gray},
+	stepnumber=1,
+	numbersep=5pt,
+	breaklines=true,
+	frame=single,
+	tabsize=2,
+	showstringspaces=false
+}
+
+
+
+\title{Cloud Computing - Project Report \\ Cloud-Busters}
 \author{
     Hajar Makhlouf  \\ h.makhlouf@studenti.unipi.it \and 
     Lorenzo Vezzani \\ ...@studenti.unipi.it \and
