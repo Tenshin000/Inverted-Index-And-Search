@@ -1,2 +1,22 @@
-\section{Non-parallel code}
-...
+\section{Spark code}
+The \textbf{Spark}-related Python code was implemented based on the functional patterns and structure demonstrated during the lectures. \textbf{Apache Spark} is an open-source, distributed data processing engine designed for fast in-memory analytics and large-scale workload orchestration. Spark doesn’t strictly use \textbf{MapReduce}, but it supports map and reduce operations but runs them within a more flexible \textbf{DAG} execution model rather than the rigid two-stage MapReduce paradigm.
+
+\vspace{4mm}
+
+\textbf{RDD\_inverted\_index\_search.py} was the first version of the \textbf{Spark} code. Its \textbf{build\_index} method begins by reading one or more text files from \textbf{HDFS} into Spark as an \textbf{RDD} of (filepath, content) pairs using \textbf{wholeTextFiles}, then unites these RDDs into a single \textbf{collection}. It applies a \textbf{flatMap} transformation that lowercases and \textbf{tokenizes} each document via a regular expression, counts word occurrences locally with Python’s Counter, and emits tuples of the form (word, {filename: count}). By performing \textbf{local counting} before the \textbf{shuffle}, the method minimizes network traffic. Next, it aggregates all partial maps for each word across partitions using \textbf{aggregateByKey}, merging dictionaries of filename counts into a complete postings list. The resulting RDD of (word, postingsDict) is converted into tab‐delimited strings like:
+
+"word \t file1:count1 \t file2:count2"
+
+Finally, it writes the index either as plain text via saveAsTextFile or as structured JSON or Parquet through a Spark DataFrame, producing an efficient, fully distributed inverted index. 
+
+\vspace{4mm}
+
+However this code had poor performance, performance that we expected better from Spark. So we build another version. Spark's \textbf{DataFrames} wrap RDDs with a schema and declarative API, letting Spark Catalyst optimizer and Tungsten execution engine apply column-level and query-plan optimizations for far better performance and memory use than raw RDDs. 
+
+\vspace{4mm}
+
+In the new \textbf{inverted\_index\_search.py}, it first loads each specified path into a unified DataFrame annotated with a filename column, gracefully skipping any unreadable files. It then applies a sequence of Spark SQL transformations: all non‐alphanumeric characters are stripped via \textbf{regexp\_replace}, text is lowercased and split on whitespace and each word is exploded into its own row. Empty tokens are filtered out to ensure data quality. So we have a more optimized \textbf{tokenization}. In the next phase, the code groups by word and filename to compute per‐document term frequencies, then concatenates these as filename:count strings. A second grouping by word collects and sorts the full postings list into an array, producing one row per unique term with its complete, ordered document list. Finally the output is either written as plain text—with words and tab‐separated postings—JSON, or Parquet. This approach leverages Spark’s built‐in DataFrame optimizations and avoids manual RDD manipulations while delivering a scalable inverted index. 
+
+
+
+
