@@ -28,43 +28,43 @@ The system uses \textbf{MapReduce}, via the \textbf{Hadoop} framework, to proces
 \begin{center}
 	\begin{minipage}{\linewidth}
 		\begin{lstlisting}[language=PseudoCode]
-			class TokenizerMapperStateful
-			
-			method initialize()
-			word_counts <= New Empty AssociativeArray()
-			end method
-			
-			method map(offset o, doc d)
-			Filename <= retrieve_file_name()
-			
-			for all term t in doc d do
+class TokenizerMapperStateful
+
+	method initialize()
+		word_counts <= New Empty AssociativeArray()
+	end method
+	
+	method map(offset o, doc d)
+		Filename <= retrieve_file_name()
+		
+		for all term t in doc d do
 			if word_counts[t] does not contain Filename then
-			word_counts[t][Filename] <= 1
+				word_counts[t][Filename] <= 1
 			else
-			word_counts[t][Filename] <= word_counts[t][Filename] + 1
+				word_counts[t][Filename] <= word_counts[t][Filename] + 1
 			end if
-			end for
-			
-			if word_counts.size() > FLUSH_THRESHOLD then
+		end for
+		
+		if word_counts.size() > FLUSH_THRESHOLD then
 			flush(context)
-			end if
-			end method
-			
-			method flush(context)
-			for each word in word_counts do
+		end if
+	end method
+	
+	method flush(context)
+		for each word in word_counts do
 			for each filename in word_counts[word] do
-			value <= filename + ":" + word_counts[word][filename]
-			emit(word, value)
+				value <= filename + ":" + word_counts[word][filename]
+				emit(word, value)
 			end for
-			end for
-			clear word_counts
-			end method
-			
-			method cleanup(context)
-			flush(context)
-			end method
-			
-			end class
+		end for
+		clear word_counts
+	end method
+	
+	method cleanup(context)
+		flush(context)
+	end method
+
+end class
 		\end{lstlisting}
 		\captionof{figure}{Stateful Mapper PseudoCode}
 		\label{fig:pseudocode-stateful-mapper}
@@ -74,14 +74,14 @@ The system uses \textbf{MapReduce}, via the \textbf{Hadoop} framework, to proces
 \begin{center}
 	\begin{minipage}{\linewidth}
 		\begin{lstlisting}[language=PseudoCode]
-			class TokenizerMapper
-			method map(offset o, doc d)
-			Filename <= retrieve_file_name()
-			for all term t in doc d do
+class TokenizerMapper
+	method map(offset o, doc d)
+		Filename <= retrieve_file_name()
+		for all term t in doc d do
 			emit(term t, filename + ":1")
-			end for
-			end method
-			end class
+		end for
+	end method
+end class
 		\end{lstlisting}
 		\captionof{figure}{Stateless Mapper PseudoCode}
 		\label{fig:pseudocode-stateless-mapper}
