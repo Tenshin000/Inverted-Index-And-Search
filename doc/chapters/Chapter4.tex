@@ -26,7 +26,7 @@ The system uses \textbf{MapReduce}, via the \textbf{Hadoop} framework, to proces
 	escapeinside={(@}{@)}
 }
 \begin{center}
-	\begin{minipage}{\linewidth}
+	\begin{minipage}{0.9\linewidth}
 		\begin{lstlisting}[language=PseudoCode]
 class TokenizerMapperStateful
 
@@ -70,9 +70,8 @@ end class
 		\label{fig:pseudocode-stateful-mapper}
 	\end{minipage}
 \end{center}
-\vspace{-1em}
 \begin{center}
-	\begin{minipage}{\linewidth}
+	\begin{minipage}{0.9\linewidth}
 		\begin{lstlisting}[language=PseudoCode]
 class TokenizerMapper
 	method map(offset o, doc d)
@@ -87,8 +86,26 @@ end class
 		\label{fig:pseudocode-stateless-mapper}
 	\end{minipage}
 \end{center}
-
-\columnbreak
+	\begin{center}
+		\begin{minipage}{0.9\linewidth}
+			\begin{lstlisting}[language=PseudoCode]
+class DocumentCountReducer
+	method reduce(term, postingsList)
+		docCounts <= {}
+		for all posting in postingsList do
+			for pair in split(posting, ",") do
+				doc, cnt <= splitLast(pair, ":")
+				docCounts[doc] docCounts.get(doc, 0) + toInt(cnt)
+			endfor
+		endfor
+	emit(term, format(docCounts))
+	end method
+end class
+			\end{lstlisting}
+			\captionof{figure}{Reducer PseudoCode}
+			\label{fig:pseudocode-reducer}
+		\end{minipage}
+\end{center}
 
 The application is structured to support two interchangeable variants of the MapReduce job: one using a classic \textbf{mapper with an optional combiner} and one based on an \textbf{statefull in-mapper combiner} approach. This modularity is achieved by dynamically selecting the Mapper class at runtime based on command-line flags, improving flexibility and maintainability. 
 
