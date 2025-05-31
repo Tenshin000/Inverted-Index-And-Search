@@ -53,7 +53,9 @@ class TokenizerMapperStateful
 	method flush(context)
 		for each word in word_counts do
 			for each filename in word_counts[word] do
-				value <= filename + ":" + word_counts[word][filename]
+				value <= filename + ":"+ 
+				+word_counts[word][filename]
+				
 				emit(word, value)
 			end for
 		end for
