@@ -11,7 +11,7 @@ def csv_to_plot():
     data = []
     technologies = {"noimc-hadoop","hadoop","rdd-spark","spark"}
     technology_labels = {
-        "spark": "Spark with Dataframe",
+        "spark": "Spark with DataFrames",
         "rdd-spark": "Spark with RDD",
         "hadoop": "Hadoop with In-Mapper Combining",
         "noimc-hadoop": "Hadoop with Combiner"
@@ -35,6 +35,7 @@ def csv_to_plot():
             avg_shu = df["shuffle"].mean()
             avg_phy = df["physical_mem_snapshot"].mean()
             avg_vir = df["virtual_mem_snapshot"].mean()
+            avg_time = df["total_cpu_time"].mean()
             
             data.append({
                 "size_mb": size_mb,
@@ -43,7 +44,8 @@ def csv_to_plot():
                 "Aggregate Resource Allocation (MB-s)": avg_res,
                 "Shuffle (MB)": avg_shu,
                 "Physical Memory Snapshot (MB)": avg_phy,
-                "Virtual Memory Snapshot (MB)": avg_vir
+                "Virtual Memory Snapshot (MB)": avg_vir,
+                "Total CPU Time (s)": avg_time
             })
 
     summary_df = pd.DataFrame(data)
@@ -55,7 +57,8 @@ def csv_to_plot():
                     "Aggregate Resource Allocation (MB-s)", 
                     "Shuffle (MB)",
                     "Physical Memory Snapshot (MB)",
-                    "Virtual Memory Snapshot (MB)"]:
+                    "Virtual Memory Snapshot (MB)",
+                    "Total CPU Time (s)"]:
         
         plt.figure(figsize=(8, 5))
         

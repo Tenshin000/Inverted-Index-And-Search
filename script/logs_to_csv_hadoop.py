@@ -29,7 +29,7 @@ def process_file_log(directory, prefix_filter):
 
         filepath = os.path.join(directory, filename)
         with open(filepath, 'r', encoding='utf-16') as f:
-            execution_time = aggregate_resource_allocation = None
+            execution_time = aggregate_resource_allocation = total_cpu_time = None
             reduce_shuffle = physical_mem_snapshot = virtual_mem_snapshot = None
 
             for raw_line in f:
@@ -44,20 +44,24 @@ def process_file_log(directory, prefix_filter):
                     physical_mem_snapshot = extract_value(line, "Physical memory (bytes) snapshot") / MB
                 if virtual_mem_snapshot is None and "Virtual memory (bytes) snapshot" in line:
                     virtual_mem_snapshot = extract_value(line, "Virtual memory (bytes) snapshot") / MB
+                if total_cpu_time is None and "CPU time spent (ms)" in line:
+                    total_cpu_time = extract_value(line, "CPU time spent (ms)") / 1000
 
             if None not in (
                 execution_time,
                 physical_mem_snapshot,
                 virtual_mem_snapshot,
                 reduce_shuffle,
-                aggregate_resource_allocation
+                aggregate_resource_allocation,
+                total_cpu_time
             ):
                 data.append((
                     execution_time,
                     physical_mem_snapshot,
                     virtual_mem_snapshot,
                     reduce_shuffle,
-                    aggregate_resource_allocation
+                    aggregate_resource_allocation,
+                    total_cpu_time
                 ))
 
     return data
@@ -68,7 +72,8 @@ def save_csv(data, output_csv, averages=False):
         "physical_mem_snapshot",
         "virtual_mem_snapshot",
         "shuffle", 
-        "aggregate_resource_allocation"
+        "aggregate_resource_allocation",
+        "total_cpu_time"
     ]
 
     with open(output_csv, 'w', newline='') as csvfile:
@@ -81,7 +86,8 @@ def save_csv(data, output_csv, averages=False):
                 data["physical_mem_snapshot"],
                 data["virtual_mem_snapshot"],
                 data["shuffle"],
-                data["aggregate_resource_allocation"]
+                data["aggregate_resource_allocation"],
+                data["total_cpu_time"]
             ])
         else:
             writer.writerows(data)
@@ -92,7 +98,8 @@ def calculate_average(data):
         "physical_mem_snapshot": statistics.mean(row[1] for row in data),
         "virtual_mem_snapshot": statistics.mean(row[2] for row in data),
         "shuffle": statistics.mean(row[3] for row in data),
-        "aggregate_resource_allocation": statistics.mean(row[4] for row in data)
+        "aggregate_resource_allocation": statistics.mean(row[4] for row in data),
+        "total_cpu_time": statistics.mean(row[5] for row in data)
     }
     return average
 

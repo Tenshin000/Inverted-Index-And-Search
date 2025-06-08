@@ -32,6 +32,7 @@ def process_file_log(directory, prefix_filter=None):
             shuffle_write = None
             physical_mem_snapshot = None
             virtual_mem_snapshot = None
+            total_cpu_time = None
 
             for raw_line in f:
                 line = raw_line.strip()
@@ -45,20 +46,24 @@ def process_file_log(directory, prefix_filter=None):
                     physical_mem_snapshot = extract_value(line, "Physical Memory Snapshot")
                 if virtual_mem_snapshot is None and "Virtual Memory Snapshot" in line:
                     virtual_mem_snapshot = extract_value(line, "Virtual Memory Snapshot")
+                if total_cpu_time is None and "Total CPU time" in line:
+                    total_cpu_time = extract_value(line, "Total CPU time")
 
             if None not in (
                 execution_time,
                 physical_mem_snapshot,
                 virtual_mem_snapshot,
                 shuffle_write,
-                aggregate_resource_allocation
+                aggregate_resource_allocation,
+                total_cpu_time
             ):
                 records.append((
                     execution_time,
                     physical_mem_snapshot,
                     virtual_mem_snapshot,
                     shuffle_write,
-                    aggregate_resource_allocation
+                    aggregate_resource_allocation,
+                    total_cpu_time
                 ))
     return records
 
@@ -69,7 +74,8 @@ def save_csv(data, output_csv, averages=False):
         "physical_mem_snapshot",
         "virtual_mem_snapshot",
         "shuffle",
-        "aggregate_resource_allocation"
+        "aggregate_resource_allocation",
+        "total_cpu_time"
     ]
 
     with open(output_csv, 'w', newline='') as csvfile:
@@ -82,7 +88,8 @@ def save_csv(data, output_csv, averages=False):
                 data["physical_mem_snapshot"],
                 data["virtual_mem_snapshot"],
                 data["shuffle"],
-                data["aggregate_resource_allocation"]
+                data["aggregate_resource_allocation"],
+                data["total_cpu_time"]
             ])
         else:
             writer.writerows(data)
@@ -93,7 +100,8 @@ def calculate_average(data):
         "physical_mem_snapshot": statistics.mean(row[1] for row in data),
         "virtual_mem_snapshot": statistics.mean(row[2] for row in data),
         "shuffle": statistics.mean(row[3] for row in data),
-        "aggregate_resource_allocation": statistics.mean(row[4] for row in data)
+        "aggregate_resource_allocation": statistics.mean(row[4] for row in data),
+        "total_cpu_time": statistics.mean(row[5] for row in data)
     }
 
 def operation_spark(input, output):
