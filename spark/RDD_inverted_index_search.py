@@ -15,7 +15,7 @@ from pyspark.sql import Row
 
 # ----------------------------#
 #        CONFIGURATIONS       #
-# ----------------------------#
+# ----------------------------# 
 HDFS_BASE = "hdfs:///user/hadoop/"
 DATA_DIR = HDFS_BASE + "inverted-index/data"
 OUTPUT_BASE = HDFS_BASE + "inverted-index/output/"
@@ -31,14 +31,14 @@ printer = logging.getLogger(__name__)
 
 # ----------------------------#
 #          EXCEPTION          #
-# ----------------------------#
+# ----------------------------# 
 class HDFSPathNotFoundError(Exception):
     pass
 
 
 # ----------------------------#
 #      SPARK APPLICATION      #
-# ----------------------------#
+# ----------------------------# 
 class InvertedIndexSearch:
     # ----------------------------#
     #            Fields           #
