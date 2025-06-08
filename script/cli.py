@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import argparse
 import getpass
 import os
@@ -8,6 +9,7 @@ from recover_resources import download_txt_files
 from logs_to_csv_spark import operation_spark
 from logs_to_csv_hadoop import operation_hadoop
 from plot import csv_to_plot
+from create_input_partitions import create_partitions
 
 # List of log directories to process
 LOG_DIRS = [
@@ -30,6 +32,8 @@ def main():
                         help="Process Hadoop logs into CSV for all test-* folders")
     parser.add_argument("--plot-csv", action="store_true",
                         help="Plot csv from log folders filtering by given technologies")
+    parser.add_argument("--create-partitions", action="store_true",
+                        help="Create input partitions from HDFS data folder")
 
     args = parser.parse_args()
 
@@ -37,7 +41,7 @@ def main():
     if args.recover_resources:
         total = 1
         step = 1
-        print(f"[{step}/{total}] ➡ Resource recovery to HDFS …")
+        print(f"[{step}/{total}] ➡ Resource recovery to HDFS ...")
         ftp_pass = getpass.getpass("Enter your FTP password: ")
         download_txt_files(
             base_url="ftp.blogpanattoni.altervista.org",
@@ -52,7 +56,7 @@ def main():
     if args.recover_resources_local:
         total = 1
         step = 1
-        print(f"[{step}/{total}] ➡ Resource recovery locally …")
+        print(f"[{step}/{total}] ➡ Resource recovery locally ...")
         ftp_pass = getpass.getpass("Enter your FTP password: ")
         download_txt_files(
             base_url="ftp.blogpanattoni.altervista.org",
@@ -68,7 +72,7 @@ def main():
         total = len(LOG_DIRS)
         print(f"\n=== SPARK: Generating CSV from logs ({total} folders) ===")
         for idx, log_dir in enumerate(LOG_DIRS, start=1):
-            print(f"[{idx}/{total}] ➡ Running Spark CSV operation on {log_dir} …")
+            print(f"[{idx}/{total}] ➡ Running Spark CSV operation on {log_dir} ...")
             operation_spark(log_dir, "../log/csv-logs/")
             print(f"[{idx}/{total}] ✓ Spark CSV operation completed for {log_dir}")
 
@@ -77,7 +81,7 @@ def main():
         total = len(LOG_DIRS)
         print(f"\n=== HADOOP: Generating CSV from logs ({total} folders) ===")
         for idx, log_dir in enumerate(LOG_DIRS, start=1):
-            print(f"[{idx}/{total}] ➡ Running Hadoop CSV operation on {log_dir} …")
+            print(f"[{idx}/{total}] ➡ Running Hadoop CSV operation on {log_dir} ...")
             operation_hadoop(log_dir, "../log/csv-logs/")
             print(f"[{idx}/{total}] ✓ Hadoop CSV operation completed for {log_dir}")
 
@@ -87,7 +91,13 @@ def main():
 
         print(f"\n=== PLOTTING: Plotting metrics for technologies {technologies} in {len(LOG_DIRS)} folders ===")
         csv_to_plot()
-        print("✓ Plotting completed")                     
+        print("✓ Plotting completed")     
+
+    # BLOCK 6: create input partitions
+    if args.create_partitions:
+        print("\n=== PARTITION: Creating input partitions in HDFS ===")
+        create_partitions()
+        print("✓ Input partitions created in HDFS.")                
 
 if __name__ == "__main__":
     main()
