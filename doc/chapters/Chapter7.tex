@@ -1,2 +1,4 @@
-\section{Tests and Results}
-...
+\section{Search Query System}
+The accompanying \texttt{search\_query.py} script is compatible with inverted indexes produced by all implementations. It uses \texttt{build\_term\_offset\_index} to create an in-memory mapping of terms to file offsets, enabling random-access reads during search and minimizing I/O. The \texttt{search\_optimized} function processes user queries by normalizing terms and retrieving relevant postings. It computes the intersection of filenames across query terms and returns a sorted list, omitting term frequencies in accordance with project requirements. The interface supports continuous querying and exits cleanly on \texttt{Ctrl+D}.
+
+Although not scalable like Hadoop or Spark, the non-parallel solution offers a lightweight, easy-to-analyze benchmark for small datasets, helping assess the overhead introduced by distributed frameworks. Its performance metrics are evaluated alongside the parallel implementations in the following section.

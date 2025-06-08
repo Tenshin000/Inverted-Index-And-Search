@@ -1,2 +1,5 @@
 \section{Non-parallel code}
-...
+The non-parallel Python implementation provides a local baseline for comparing with Hadoop and Spark. It builds an inverted index from text files on a single machine, tracking execution time and memory usage for fair performance evaluation with \texttt{psutils}.
+
+The \textbf{non\_parallel.py} script reads .txt files, tokenizes text, and constructs an index mapping words to document counts. Output is written in sorted, tab-delimited format. Optional size-limited processing and resource monitoring are included for controlled testing. 
+
