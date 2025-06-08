@@ -23,24 +23,11 @@ public class InvertedIndexAndSearch {
     // Helper methods
     private static List<Path> resolveInputPaths(FileSystem fs,
             String mode,
-            String localFolder,
             String hdfsFolder,
             List<String> rawInputs,
             String defaultInputDir) throws IOException {
         List<Path> paths = new ArrayList<>();
         switch (mode) {
-            case "local-folder":
-                for (java.io.File f : new java.io.File(localFolder).listFiles()) {
-                    if (f.isFile() && f.getName().endsWith(".txt")) {
-                        paths.add(new Path(f.getAbsolutePath()));
-                    }
-                }
-                break;
-            case "local-files":
-                for (String fp : rawInputs) {
-                    paths.add(new Path(fp));
-                }
-                break;
             case "hdfs-folder":
                 Path hf = new Path("hdfs:///user/hadoop/" + hdfsFolder);
                 for (FileStatus st : fs.listStatus(hf)) {
@@ -91,8 +78,7 @@ public class InvertedIndexAndSearch {
 
     private static Path resolveOutputPath(FileSystem fs,
             String defaultHdfsRoot,
-            String customHdfsRoot,
-            String outputLocal) throws IOException {
+            String customHdfsRoot) throws IOException {
         String root = customHdfsRoot != null ? customHdfsRoot : defaultHdfsRoot;
         Path base = new Path(root);
         String baseName = "output-hadoop";
@@ -102,9 +88,6 @@ public class InvertedIndexAndSearch {
             candidate = new Path(base, baseName + suffix);
             suffix++;
         } while (fs.exists(candidate));
-        if (outputLocal != null) {
-            return new Path(outputLocal, baseName + (suffix - 1));
-        }
         return candidate;
     }
 
@@ -120,11 +103,9 @@ public class InvertedIndexAndSearch {
         // CLI state
         int numReducers = -1;
         String inputMode = "default";
-        String localFolder = null;
         String hdfsFolder = null;
         List<String> rawInputs = new ArrayList<>();
         long limitBytes = -1;
-        String outputLocal = null;
         String outputHdfsRoot = null;
         boolean useStateful = true; // default: In-Mapper Combiner
         boolean useCombiner = false; // only with --combiner
@@ -138,20 +119,10 @@ public class InvertedIndexAndSearch {
                         numReducers = r;
                     break;
                 case "--input-folder":
-                    inputMode = "local-folder";
-                    localFolder = args[++i];
-                    break;
-                case "--input-texts":
-                    inputMode = "local-files";
-                    while (i + 1 < args.length && !args[i + 1].startsWith("--")) {
-                        rawInputs.add(args[++i]);
-                    }
-                    break;
-                case "--input-hdfs-folder":
                     inputMode = "hdfs-folder";
                     hdfsFolder = args[++i];
                     break;
-                case "--input-hdfs-texts":
+                case "--input-texts":
                     inputMode = "hdfs-files";
                     while (i + 1 < args.length && !args[i + 1].startsWith("--")) {
                         rawInputs.add(args[++i]);
@@ -161,9 +132,6 @@ public class InvertedIndexAndSearch {
                     limitBytes = Long.parseLong(args[++i]) * 1024L * 1024L;
                     break;
                 case "--output":
-                    outputLocal = args[++i];
-                    break;
-                case "--output-hdfs":
                     outputHdfsRoot = "hdfs:///user/hadoop/" + args[++i] + "/";
                     break;
                 case "--combiner":
@@ -180,7 +148,7 @@ public class InvertedIndexAndSearch {
         }
 
         // resolve input files
-        List<Path> inputPaths = resolveInputPaths(fs, inputMode, localFolder, hdfsFolder, rawInputs, defaultInputDir);
+        List<Path> inputPaths = resolveInputPaths(fs, inputMode, hdfsFolder, rawInputs, defaultInputDir);
 
         // apply limit if default mode
         if (limitBytes > 0 && "default".equals(inputMode)) {
@@ -188,7 +156,7 @@ public class InvertedIndexAndSearch {
         }
 
         // determine output path
-        Path outputPath = resolveOutputPath(fs, defaultOutputRoot, outputHdfsRoot, outputLocal);
+        Path outputPath = resolveOutputPath(fs, defaultOutputRoot, outputHdfsRoot);
 
         // --- JOB CONFIGURATION in main ---
         long startTime = System.currentTimeMillis();

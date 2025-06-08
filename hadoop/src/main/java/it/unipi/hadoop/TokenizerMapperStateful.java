@@ -11,7 +11,7 @@ import org.apache.hadoop.fs.Path;
 
 public class TokenizerMapperStateful extends Mapper<LongWritable, Text, Text, Text> {
     // Threshold to trigger flushing of the in-memory word counts to context
-    private static final int FLUSH_THRESHOLD = 10000;
+    private static final int FLUSH_THRESHOLD = 100000;
 
     // Map to store word -> (document -> count) relationships
     private Map<String, Map<String, Integer>> wordCounts;
