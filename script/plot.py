@@ -12,7 +12,7 @@ def csv_to_plot():
     technologies = {"noimc-hadoop","hadoop","rdd-spark","spark"}
     technology_labels = {
         "spark": "Spark with DataFrames",
-        "rdd-spark": "Spark with RDD",
+        "rdd-spark": "Spark with RDDs",
         "hadoop": "Hadoop with In-Mapper Combining",
         "noimc-hadoop": "Hadoop with Combiner"
     }    
