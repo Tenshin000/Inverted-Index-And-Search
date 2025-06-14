@@ -495,9 +495,9 @@ def main():
         if args.output:
             base = HDFS_BASE + args.output.rstrip("/")
             idx = 0
-            while engine.hdfs_dir_exists(f"{base}-spark{idx}"):
+            while engine.hdfs_dir_exists(f"{base}/output-spark{idx}"):
                 idx += 1
-            output_path = f"{base}-spark{idx}"
+            output_path = f"{base}/output-spark{idx}"
         else:
             # Auto-increment under OUTPUT_BASE
             output_path = engine.choose_output_path()

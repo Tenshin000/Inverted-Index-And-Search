@@ -188,7 +188,7 @@ class InvertedIndexSearch:
             docID = basename(fullpath)
 
             # Let's convert everything to lowercase and replace non-alphanumeric characters/spaces with space
-            cleaned = re.sub(r"[^\w\s]", " ", text.lower())
+            cleaned = re.sub(r"[^\w\s]|_", " ", text.lower())
 
             # Now we can split on spaces to get the words
             for word in cleaned.split():
@@ -544,9 +544,9 @@ def main():
         if args.output:
             base = HDFS_BASE + args.output.rstrip("/")
             idx = 0
-            while engine.hdfs_dir_exists(f"{base}-spark{idx}"):
+            while engine.hdfs_dir_exists(f"{base}/output-spark{idx}"):
                 idx += 1
-            output_path = f"{base}-spark{idx}"
+            output_path = f"{base}/output-spark{idx}"
         else:
             # Auto-increment under OUTPUT_BASE
             output_path = engine.choose_output_path()

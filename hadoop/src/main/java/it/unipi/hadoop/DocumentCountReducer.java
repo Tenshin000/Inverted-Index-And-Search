@@ -7,9 +7,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-// INPUT  (key: word, value: doc1:count,doc2:count,...)
+// INPUT  (key: word, value: doc:count)
 // OUTPUT (key: word, value: doc1:countSum,doc2:countSum,...)
-
 public class DocumentCountReducer extends Reducer<Text, Text, Text, Text> {
 
     // Reusable StringBuilder for output string construction
@@ -24,41 +23,32 @@ public class DocumentCountReducer extends Reducer<Text, Text, Text, Text> {
 
         for (Text val : values) {
             String s = val.toString();
-            int start = 0;
-            int len = s.length();
 
-            // Iterate through comma-separated pairs without splitting the whole string
-            while (start < len) {
-                int comma = s.indexOf(',', start);
-                int end = (comma >= 0 ? comma : len);
+            // Find the last ':' which separates filename and count
+            int idx = s.lastIndexOf(':');
+            if (idx <= 0 || idx == s.length() - 1) {
+                // Skip malformed entries
+                continue;
+            }
 
-                // Extract the substring for the current pair
-                String pair = s.substring(start, end).trim();
-                start = end + 1;
+            // Extract document ID (filename) and count
+            String docId = s.substring(0, idx);
+            String countStr = s.substring(idx + 1);
 
-                // Find the last ':' to handle doc IDs that may contain ':'
-                int colon = pair.lastIndexOf(':');
-                if (colon <= 0 || colon == pair.length() - 1) {
-                    continue; // malformed pair, skip it
-                }
-
-                String docId = pair.substring(0, colon);
-                String countStr = pair.substring(colon + 1);
-                try {
-                    int count = Integer.parseInt(countStr);
-                    // Merge count into the map
-                    docCounts.merge(docId, count, Integer::sum);
-                } catch (NumberFormatException e) {
-                    // Skip invalid count formats
-                }
+            try {
+                int count = Integer.parseInt(countStr);
+                // Merge count into the map
+                docCounts.merge(docId, count, Integer::sum);
+            } catch (NumberFormatException e) {
+                // Skip invalid count formats
             }
         }
 
-        // Build the output value: doc1:sum1,doc2:sum2,...
+        // Build the output value \t doc1:sum1 \t doc2:sum2,...
         outputBuilder.setLength(0); // clear previous content
         for (Map.Entry<String, Integer> entry : docCounts.entrySet()) {
             if (outputBuilder.length() > 0) {
-                outputBuilder.append(",");
+                outputBuilder.append("\t");
             }
             outputBuilder
                 .append(entry.getKey())
