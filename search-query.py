@@ -4,7 +4,11 @@ import glob
 import argparse
 from hdfs import InsecureClient
 
-def read_hdfs_files(hdfs_path, hdfs_url="http://10.1.1.218:9870", user="hadoop"):
+HDFS_URL = 'http://10.1.1.218:9870'
+HDFS_USER = 'hadoop'
+
+
+def read_hdfs_files(hdfs_path, hdfs_url=HDFS_URL, user=HDFS_USER):
     client = InsecureClient(hdfs_url, user=user)
     files = client.list(hdfs_path)
     contents = []
@@ -80,6 +84,8 @@ def get_index_data(args):
         return read_hdfs_files("/user/hadoop/inverted-index/search/output-spark-df")
     elif args.spark_rdd:
         return read_hdfs_files("/user/hadoop/inverted-index/search/output-spark-rdd")
+    elif args.non_parallel:
+        return read_hdfs_files("/user/hadoop/inverted-index/search/output-non-parallel")
     else:
         return []
 
@@ -88,9 +94,10 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--folder", type=str, help="Specify a local folder with the inverted index files")
     group.add_argument("--hadoop", action="store_true", help="Use Hadoop output directory")
-    group.add_argument("--spark", action="store_true", help="Use Spark (DF) output directory")
+    group.add_argument("--spark", action="store_true", help="Use Spark (DataFrame) output directory")
     group.add_argument("--spark-df", action="store_true", help="Use Spark DataFrame output directory")
     group.add_argument("--spark-rdd", action="store_true", help="Use Spark RDD output directory")
+    group.add_argument("--non-parallel", action="store_true", help="Use the Non-Parallel code output directory")
 
     args = parser.parse_args()
     
