@@ -72,6 +72,7 @@ def spimi_block_write(inverted_index, block_dir, block_id):
     Write the in-memory inverted index to a block file, sorted by term.
     Returns the path to the written block. Single Pass In Memory Indexing. 
     """
+    print("Flush...")  # Log flush event
     os.makedirs(block_dir, exist_ok=True)
     block_path = os.path.join(block_dir, f"block_{block_id}.txt")
     with open(block_path, 'w', encoding='utf-8') as bf:
@@ -80,7 +81,6 @@ def spimi_block_write(inverted_index, block_dir, block_id):
             postings = inverted_index[word]
             line = '\t'.join(f"{doc}:{cnt}" for doc, cnt in sorted(postings.items()))
             bf.write(f"{word}\t{line}\n")
-    print("Flush...")  # Log flush event
     return block_path
 
 
