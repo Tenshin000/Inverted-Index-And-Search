@@ -19,7 +19,8 @@ HDFS_USER = 'hadoop'
 # Default URIs for input and output
 DEFAULT_INPUT = 'hdfs:///user/hadoop/inverted-index/data'
 DEFAULT_OUTPUT = 'hdfs:///user/hadoop/inverted-index/output'
-# Number of files to process in-memory before flushing to a block\BLOCK_SIZE = 200
+# Number of files to process in-memory before flushing to a block
+BLOCK_SIZE = 200
 
 
 def parse_args():
