@@ -1,0 +1,2 @@
+execution_time,physical_mem_snapshot,virtual_mem_snapshot,shuffle,aggregate_resource_allocation,total_cpu_time
+77.15266666666668,2952.7662760416665,9536.119140625,240.8579626083374,347592.0,105.18166666666667

@@ -5,7 +5,8 @@ import seaborn as sns
 import os
 import re
 
-def csv_to_plot():
+
+def plot_logs():
     folder_path = "../log/csv-logs"
 
     data = []
@@ -85,8 +86,80 @@ def csv_to_plot():
         print(f"Saved: {filename}")
 
         plt.show()
-        
         plt.close()
+
+def plot_reducers():
+    folder_path = "../log/csv-logs"
+
+    # Match files: log-<DIM>MB-reducer<NUM>.csv
+    reducer_pattern = re.compile(r"log-(\d+)(MB)-reducer(\d+)\.csv")
+    reducer_data = []
+
+    for filename in os.listdir(folder_path):
+        match = reducer_pattern.match(filename)
+        if match:
+            size_mb = int(match.group(1))
+            reducer_num = int(match.group(3))
+
+            file_path = os.path.join(folder_path, filename)
+            df = pd.read_csv(file_path, encoding='utf-8', header=0)
+
+            reducer_data.append({
+                "Input Size (MB)": size_mb,
+                "Reducers": reducer_num,
+                "Execution Time (s)": df["execution_time"].mean(),
+                "Aggregate Resource Allocation (MB-s)": df["aggregate_resource_allocation"].mean(),
+                "Shuffle (MB)": df["shuffle"].mean(),
+                "Physical Memory Snapshot (MB)": df["physical_mem_snapshot"].mean(),
+                "Virtual Memory Snapshot (MB)": df["virtual_mem_snapshot"].mean(),
+                "Total CPU Time (s)": df["total_cpu_time"].mean()
+            })
+
+    if reducer_data:
+        reducer_df = pd.DataFrame(reducer_data)
+
+        # Ensure 'Reducers' is treated as category to maintain order
+        reducer_df["Reducers"] = reducer_df["Reducers"].astype(str)
+
+        sns.set_theme(style="whitegrid")
+        color_palette = sns.color_palette("Set3", n_colors=reducer_df["Reducers"].nunique())
+
+        for metric in [
+            "Execution Time (s)",
+            "Aggregate Resource Allocation (MB-s)",
+            "Shuffle (MB)",
+            "Physical Memory Snapshot (MB)",
+            "Virtual Memory Snapshot (MB)",
+            "Total CPU Time (s)"
+        ]:
+            plt.figure(figsize=(8, 5))
+
+            sns.barplot(
+                data=reducer_df,
+                x="Input Size (MB)",
+                y=metric,
+                hue="Reducers",
+                palette=color_palette
+            )
+
+            plt.title(f"{metric} vs Input Size (MB) by Reducer Count")
+            plt.xlabel("Input Size (MB)")
+            plt.ylabel(f"Average {metric}")
+            plt.tight_layout()
+            plt.legend(title="Reducers")
+
+            output_dir = "../doc/images/"
+            os.makedirs(output_dir, exist_ok=True)
+            filename = os.path.join(output_dir, f"plot_reducers_{metric}.png")
+            plt.savefig(filename)
+            print(f"Saved: {filename}")
+            plt.show()
+            plt.close()
+
+
+def csv_to_plot():
+    plot_logs()
+    plot_reducers()
 
 if __name__ == "__main__":
     csv_to_plot()

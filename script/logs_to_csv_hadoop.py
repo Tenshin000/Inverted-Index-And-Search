@@ -103,6 +103,48 @@ def calculate_average(data):
     }
     return average
 
+def log_hadoop_confront_spark(input_base, output_base):
+    # Process top-level Hadoop logs in test-* directories
+    for entry in os.listdir(input_base):
+        path = os.path.join(input_base, entry)
+        if os.path.isdir(path) and entry.startswith("test-"):
+            dim = extract_mb_from_path(entry)
+            for prefix in ["log-hadoop", "log-noimc-hadoop"]:
+                print(f"Processing {prefix} in {entry}...")
+                rows = process_file_log(path, prefix_filter=prefix)
+                if not rows:
+                    print(f"  No data for {prefix} in {entry}")
+                    continue
+                avg = calculate_average(rows)
+                suffix = prefix[len("log-"):]  # e.g. "hadoop" or "noimc-hadoop"
+                out_csv = os.path.join(output_base, f"log-{dim}MB-{suffix}.csv")
+                save_csv(avg, out_csv, averages=True)
+                print(f"  Wrote {out_csv}")
+
+def log_hadoop_reducers(input_base, output_base):
+    # Process reducer logs
+    for entry in os.listdir(input_base):
+        match = re.match(r"(\d+)-reducers?", entry)
+        if match:
+            num = match.group(1)
+            base = os.path.join(input_base, entry)
+            for sub in os.listdir(base):
+                if sub.startswith("test-"):
+                    dim = extract_mb_from_path(sub)
+                    dir_logs = os.path.join(base, sub)
+                    print(f"Processing reducers in {entry}/{sub}...")
+                    rows = process_file_log(dir_logs, prefix_filter="log-reducer")
+                    if not rows:
+                        print(f"  No data in {entry}/{sub}")
+                        continue
+                    avg = calculate_average(rows)
+                    out_csv = os.path.join(
+                        output_base,
+                        f"log-{dim}MB-reducer{num}.csv"
+                    )
+                    save_csv(avg, out_csv, averages=True)
+                    print(f"  Wrote {out_csv}")
+
 def operation_hadoop(input, output):
     log_folder = input
     output_base = output
@@ -124,7 +166,7 @@ def operation_hadoop(input, output):
 
         save_csv(averages, output_csv, averages=True)
         print(f"CSV '{output_csv}' written with averages.")
-
+    
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python from-log-to-csv-hadoop.py <log_folder> <output_base>")

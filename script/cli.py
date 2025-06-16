@@ -2,12 +2,10 @@
 import argparse
 import getpass
 import os
-import importlib.util
-import sys
 
 from recover_resources import download_txt_files
 from logs_to_csv_spark import operation_spark
-from logs_to_csv_hadoop import operation_hadoop
+from logs_to_csv_hadoop import operation_hadoop, log_hadoop_reducers
 from plot import csv_to_plot
 from create_input_partitions import create_partitions
 
@@ -20,6 +18,63 @@ LOG_DIRS = [
     "../log/test-1583MB",
 ]
 
+def recover_to_hdfs(step, total):
+    print(f"[{step}/{total}] ➡ Recovering resources to HDFS ...")
+    ftp_pass = getpass.getpass("Enter your FTP password: ")
+    download_txt_files(
+        base_url="ftp.blogpanattoni.altervista.org",
+        folder_name="resources",
+        output_dir="hdfs:///user/hadoop/inverted-index/data",
+        ftp_user="blogpanattoni",
+        ftp_pass=ftp_pass
+    )
+    print(f"[{step}/{total}] ✓ Resources recovered to HDFS.")
+
+def recover_to_local(step, total):
+    print(f"[{step}/{total}] ➡ Recovering resources locally ...")
+    ftp_pass = getpass.getpass("Enter your FTP password: ")
+    download_txt_files(
+        base_url="ftp.blogpanattoni.altervista.org",
+        folder_name="resources",
+        output_dir="data",
+        ftp_user="blogpanattoni",
+        ftp_pass=ftp_pass
+    )
+    print(f"[{step}/{total}] ✓ Resources recovered locally.")
+
+def process_spark_logs(step_start, total):
+    print(f"\n=== [SPARK] Generating CSV from logs ===")
+    for i, log_dir in enumerate(LOG_DIRS, start=0):
+        step = step_start + i
+        print(f"[{step}/{total}] ➡ Processing Spark log: {log_dir}")
+        operation_spark(log_dir, "../log/csv-logs/")
+        print(f"[{step}/{total}] ✓ Spark CSV generated for: {log_dir}")
+    return step_start + len(LOG_DIRS)
+
+def process_hadoop_logs(step_start, total):
+    print(f"\n=== [HADOOP] Generating CSV from logs ===")
+    for i, log_dir in enumerate(LOG_DIRS, start=0):
+        step = step_start + i
+        print(f"[{step}/{total}] ➡ Processing Hadoop log: {log_dir}")
+        operation_hadoop(log_dir, "../log/csv-logs/")
+        print(f"[{step}/{total}] ✓ Hadoop CSV generated for: {log_dir}")
+    return step_start + len(LOG_DIRS)
+
+def process_reducer_logs(step, total):
+    print(f"[{step}/{total}] ➡ Processing Hadoop reducer logs ...")
+    log_hadoop_reducers("../log", "../log/csv-logs/")
+    print(f"[{step}/{total}] ✓ Reducer logs processed.")
+
+def plot_metrics(step, total):
+    print(f"[{step}/{total}] ➡ Generating plots from CSV logs ...")
+    csv_to_plot()
+    print(f"[{step}/{total}] ✓ Plotting completed.")
+
+def create_hdfs_partitions(step, total):
+    print(f"[{step}/{total}] ➡ Creating input partitions in HDFS ...")
+    create_partitions()
+    print(f"[{step}/{total}] ✓ Input partitions created.")
+
 def main():
     parser = argparse.ArgumentParser(description="Inverse Index Search CLI")
     parser.add_argument("--recover-resources", action="store_true",
@@ -31,73 +86,50 @@ def main():
     parser.add_argument("--to-csv-hadoop", action="store_true",
                         help="Process Hadoop logs into CSV for all test-* folders")
     parser.add_argument("--plot-csv", action="store_true",
-                        help="Plot csv from log folders filtering by given technologies")
+                        help="Plot CSV from logs")
     parser.add_argument("--create-partitions", action="store_true",
                         help="Create input partitions from HDFS data folder")
 
     args = parser.parse_args()
 
-    # BLOCK 1: recover resources into HDFS
-    if args.recover_resources:
-        total = 1
-        step = 1
-        print(f"[{step}/{total}] ➡ Resource recovery to HDFS ...")
-        ftp_pass = getpass.getpass("Enter your FTP password: ")
-        download_txt_files(
-            base_url="ftp.blogpanattoni.altervista.org",
-            folder_name="resources",
-            output_dir="hdfs:///user/hadoop/inverted-index/data",
-            ftp_user="blogpanattoni",
-            ftp_pass=ftp_pass
-        )
-        print(f"[{step}/{total}] ✓ Resources recovered to HDFS.")
-
-    # BLOCK 2: recover resources locally
-    if args.recover_resources_local:
-        total = 1
-        step = 1
-        print(f"[{step}/{total}] ➡ Resource recovery locally ...")
-        ftp_pass = getpass.getpass("Enter your FTP password: ")
-        download_txt_files(
-            base_url="ftp.blogpanattoni.altervista.org",
-            folder_name="resources",
-            output_dir="data",
-            ftp_user="blogpanattoni",
-            ftp_pass=ftp_pass
-        )
-        print(f"[{step}/{total}] ✓ Resources recovered locally.")
-
-    # BLOCK 3: process Spark logs
+    # Compute total number of selected operations
+    operations_selected = sum([
+        args.recover_resources,
+        args.recover_resources_local,
+        args.to_csv_spark,
+        args.to_csv_hadoop,
+        args.plot_csv,
+        args.create_partitions
+    ])
+    total_steps = operations_selected
     if args.to_csv_spark:
-        total = len(LOG_DIRS)
-        print(f"\n=== SPARK: Generating CSV from logs ({total} folders) ===")
-        for idx, log_dir in enumerate(LOG_DIRS, start=1):
-            print(f"[{idx}/{total}] ➡ Running Spark CSV operation on {log_dir} ...")
-            operation_spark(log_dir, "../log/csv-logs/")
-            print(f"[{idx}/{total}] ✓ Spark CSV operation completed for {log_dir}")
-
-    # BLOCK 4: process Hadoop logs
+        total_steps += 4
     if args.to_csv_hadoop:
-        total = len(LOG_DIRS)
-        print(f"\n=== HADOOP: Generating CSV from logs ({total} folders) ===")
-        for idx, log_dir in enumerate(LOG_DIRS, start=1):
-            print(f"[{idx}/{total}] ➡ Running Hadoop CSV operation on {log_dir} ...")
-            operation_hadoop(log_dir, "../log/csv-logs/")
-            print(f"[{idx}/{total}] ✓ Hadoop CSV operation completed for {log_dir}")
+        total_steps += 5
+    step_counter = 1
 
-    # BLOCK 5: plot logs
+    if args.recover_resources:
+        recover_to_hdfs(step_counter, total_steps)
+        step_counter += 1
+
+    if args.recover_resources_local:
+        recover_to_local(step_counter, total_steps)
+        step_counter += 1
+
+    if args.to_csv_spark:
+        step_counter = process_spark_logs(step_counter, total_steps)
+
+    if args.to_csv_hadoop:
+        step_counter = process_hadoop_logs(step_counter, total_steps)
+        process_reducer_logs(step_counter, total_steps)
+        step_counter += 1
+
     if args.plot_csv:
-        technologies = ["spark", "hadoop", "rdd-spark", "noimc-hadoop"]
+        plot_metrics(step_counter, total_steps)
+        step_counter += 1
 
-        print(f"\n=== PLOTTING: Plotting metrics for technologies {technologies} in {len(LOG_DIRS)} folders ===")
-        csv_to_plot()
-        print("✓ Plotting completed")     
-
-    # BLOCK 6: create input partitions
     if args.create_partitions:
-        print("\n=== PARTITION: Creating input partitions in HDFS ===")
-        create_partitions()
-        print("✓ Input partitions created in HDFS.")                
+        create_hdfs_partitions(step_counter, total_steps)
 
 if __name__ == "__main__":
     main()
