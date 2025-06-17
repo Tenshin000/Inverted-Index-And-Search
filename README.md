@@ -16,3 +16,11 @@ Our project for the Cloud Computing course involves developing a basic search en
 We tried to make the code as optimized as possible by doing a lot of tests to try to optimize the execution time and memory usage.
 
 
+## Equipment
+The tests were conducted on three identical virtual machines, each configured with the following hardware and software specifications:
+
+- **CPU**: 2 virtual CPUs (vCPUs), mapped to Intel(R) Xeon(R) Silver 4208 CPU @2.10GHz, provided via KVM virtualization
+- **RAM**: 6.8 GB of system memory
+- **Disk**: 40 GB of allocated virtual storage (ext4 filesystem)
+- **Operating System**: Ubuntu 22.04.1 LTS (Jammy Jellyfish), 64-bit
+
