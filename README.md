@@ -152,8 +152,8 @@ The `search_query.py` utility offers a unified CLI for querying inverted indexes
 ## Tests and Results
 ### A first comparison
 For the performance evaluation, four versions of the MapReduce implementation were considered: `Hadoop-noimc`[^1], `Hadoop-imc`, `Spark-Dataframe` and `Spark-RDD`. Three metrics were used: **Execution time**, **Aggregate resource allocation**[^2] and **Shuffle bytes**. The comparison was conducted using datasets of: `128MB`, `256MB`, `512MB`, `1024MB`, and `1583MB`.  
-From the execution time histograms (Fig. 4) it’s clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Hadoop-imc combining and Spark-dataframe for small datasets. However, when increasing the dataset, it becomes even worse than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. **Non-Parallel Execution**, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.  
-The aggregate resource allocation graph (Fig. 5) closely resembles the execution time graph. This is because aggregate memory usage is strongly correlated with execution time. However, it is also evident that, for the same execution time, Spark programs use more memory than Hadoop ones. This confirms that Spark relies more heavily on in-memory processing, whereas Hadoop performs more disk-based I/O operations. Dividing average aggregate resource allocation by average execution-time, we can obtain average resource allocation. From the following table, relative to the 1583MB case, it is also clearer that the Spark versions exploit more RAM than the Hadoop ones.
+From the execution time histograms (Execution Time Plot) it’s clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Hadoop-imc combining and Spark-dataframe for small datasets. However, when increasing the dataset, it becomes even worse than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. **Non-Parallel Execution**, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.  
+The aggregate resource allocation graph (Aggregate Resource Plot) closely resembles the execution time graph. This is because aggregate memory usage is strongly correlated with execution time. However, it is also evident that, for the same execution time, Spark programs use more memory than Hadoop ones. This confirms that Spark relies more heavily on in-memory processing, whereas Hadoop performs more disk-based I/O operations. Dividing average aggregate resource allocation by average execution-time, we can obtain average resource allocation. From the following table, relative to the 1583MB case, it is also clearer that the Spark versions exploit more RAM than the Hadoop ones.
 
 | **Version** | **Avg. Memory (MB)** |
 |:------------|:--------------------:|
@@ -164,7 +164,7 @@ The aggregate resource allocation graph (Fig. 5) closely resembles the execution
 
 <span id="tab:avg-mem" label="tab:avg-mem"></span>
 
-The last histograms (Fig. 6) are dedicated to shuffle bytes: the amount of MB received by reducers. For small datasets the result is pretty much the same for every version of the application. Starting from 512 MB the shuffle bytes of the RDD version increase significantly until they are extremely more in the version with 1583MB. This is due to the fact that a lot of **wide transformation** are used, such as: `repartition` (used to load balancing data), `groupByKey`, `reduceByKey` and `sortyByKey`.  
+The last histograms (Shuffle Plot) are dedicated to shuffle bytes: the amount of MB received by reducers. For small datasets the result is pretty much the same for every version of the application. Starting from 512 MB the shuffle bytes of the RDD version increase significantly until they are extremely more in the version with 1583MB. This is due to the fact that a lot of **wide transformation** are used, such as: `repartition` (used to load balancing data), `groupByKey`, `reduceByKey` and `sortyByKey`.  
 Indeed, the CPU time[^3], relative to the 1583MB case, as shown in the following table, is very low in the RDD-version, due to high number of I/O operations resulting from wide transformations. It is also evident that the CPU time is very high in Hadoop-noimc, the main reason behind this is the high amount of `emit()` called in the map phase.
 
 | **Version** | **CPU Time (s)** |
@@ -178,23 +178,23 @@ Indeed, the CPU time[^3], relative to the 1583MB case, as shown in the following
 
 <figure id="fig:execution-time">
 <img src="doc/images/Fig_Execution_Time.png" style="width:44.4%" />
-<figcaption>Execution time plot</figcaption>
+<figcaption>Execution Time Plot</figcaption>
 </figure>
 
 <figure id="fig:aggregate-resource-allocation">
 <img src="doc/images/Fig_Aggregate_Resource_Allocation.png" style="width:44.4%" />
-<figcaption>Aggregate resource plot</figcaption>
+<figcaption>Aggregate Resource Plot</figcaption>
 </figure>
 
 <figure id="fig:shuffle">
 <img src="doc/images/Fig_Shuffle.png" style="width:44.4%" />
-<figcaption>Shuffle plot</figcaption>
+<figcaption>Shuffle Plot</figcaption>
 </figure>
 
 ### Effect of Reducers on Performance
-The Execution Time image (Fig. 7) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse.
+The Execution Time image (Reducers Execution Time) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse.
 
-For Aggregate Resource Allocation (Fig. 8), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability.
+For Aggregate Resource Allocation (Reducers Aggregate Resource Allocation), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability.
 
 <figure id="fig:reducer-execution-time">
 <img src="doc/images/Fig_Reducers_Execution_Time.png" style="width:50.0%" />
