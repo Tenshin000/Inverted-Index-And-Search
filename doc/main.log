@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  8 JUN 2025 16:11
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  17 JUN 2025 13:13
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -574,16 +574,54 @@ Overfull \hbox (9.01416pt too wide) detected at line 16
 []
  []
 
-) (./chapters/Chapter6.tex) (./chapters/Chapter7.tex) (./chapters/Chapter8.tex)
+) (./chapters/Chapter6.tex) (./chapters/Chapter7.tex) (./chapters/Chapter8.tex
+[3]
+<images/Fig_Execution_Time.png, id=144, 578.16pt x 361.35pt>
+File: images/Fig_Execution_Time.png Graphic file (type png)
+<use images/Fig_Execution_Time.png>
+Package pdftex.def Info: images/Fig_Execution_Time.png  used on input line 42.
+(pdftex.def)             Requested size: 201.11784pt x 125.69695pt.
+<images/Fig_Aggregate_Resource_Allocation.png, id=146, 578.16pt x 361.35pt>
+File: images/Fig_Aggregate_Resource_Allocation.png Graphic file (type png)
+<use images/Fig_Aggregate_Resource_Allocation.png>
+Package pdftex.def Info: images/Fig_Aggregate_Resource_Allocation.png  used on 
+input line 48.
+(pdftex.def)             Requested size: 201.11784pt x 125.69695pt.
+<images/Fig_Shuffle.png, id=147, 578.16pt x 361.35pt>
+File: images/Fig_Shuffle.png Graphic file (type png)
+<use images/Fig_Shuffle.png>
+Package pdftex.def Info: images/Fig_Shuffle.png  used on input line 54.
+(pdftex.def)             Requested size: 201.11784pt x 125.69695pt.
+ [4 <./images/Fig_Execution_Time.png> <./images/Fig_Aggregate_Resource_Allocati
+on.png> <./images/Fig_Shuffle.png>]
+<images/Fig_Reducers_Execution_Time.png, id=165, 578.16pt x 361.35pt>
+File: images/Fig_Reducers_Execution_Time.png Graphic file (type png)
+<use images/Fig_Reducers_Execution_Time.png>
+Package pdftex.def Info: images/Fig_Reducers_Execution_Time.png  used on input 
+line 68.
+(pdftex.def)             Requested size: 226.48395pt x 141.54898pt.
 
-Overfull \vbox (11.82634pt too high) has occurred while \output is active []
+Overfull \hbox (5.0pt too wide) in paragraph at lines 68--69
+ [][] 
+ []
 
+<images/Fig_Reducers_Aggregate_Resource_Allocation.png, id=166, 578.16pt x 361.
+35pt>
+File: images/Fig_Reducers_Aggregate_Resource_Allocation.png Graphic file (type 
+png)
+<use images/Fig_Reducers_Aggregate_Resource_Allocation.png>
+Package pdftex.def Info: images/Fig_Reducers_Aggregate_Resource_Allocation.png 
+ used on input line 75.
+(pdftex.def)             Requested size: 226.48395pt x 141.54898pt.
 
-Overfull \vbox (5.25526pt too high) has occurred while \output is active []
+Overfull \hbox (5.0pt too wide) in paragraph at lines 75--76
+ [][] 
+ []
 
+)
 
-
-[3] (./main.aux)
+[5 <./images/Fig_Reducers_Execution_Time.png> <./images/Fig_Reducers_Aggregate_
+Resource_Allocation.png>] (./main.aux)
  ***********
 LaTeX2e <2024-06-01> patch level 2
 L3 programming layer <2024-09-10>
@@ -593,31 +631,35 @@ L3 programming layer <2024-09-10>
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: B5EC8F228EFE1693344247E2B61D690F;951.
+(rerunfilecheck)             Checksum: A71A0ECAF9247939E88B4D46BAC8DEC7;1503.
  ) 
 Here is how much of TeX's memory you used:
- 14089 strings out of 473579
- 222216 string characters out of 5732263
- 775986 words of memory out of 5000000
- 36742 multiletter control sequences out of 15000+600000
- 562986 words of font info for 53 fonts, out of 8000000 for 9000
+ 14161 strings out of 473579
+ 224329 string characters out of 5732263
+ 776381 words of memory out of 5000000
+ 36800 multiletter control sequences out of 15000+600000
+ 563645 words of font info for 55 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,6n,79p,1232b,1522s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,9n,79p,1232b,1522s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb><c:/tex
 live/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb><c:/texlive/2024
 /texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><c:/texlive/2024/texmf-di
 st/fonts/type1/public/amsfonts/cm/cmr10.pfb><c:/texlive/2024/texmf-dist/fonts/t
 ype1/public/amsfonts/cm/cmr12.pfb><c:/texlive/2024/texmf-dist/fonts/type1/publi
 c/amsfonts/cm/cmr17.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts
-/cm/cmr5.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pf
-b><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><c:/tex
-live/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb><c:/texlive/2024
-/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt9.pfb><c:/texlive/2024/texmf-dis
-t/fonts/type1/public/cm-super/sfrm1000.pfb>
-Output written on main.pdf (3 pages, 179143 bytes).
+/cm/cmr5.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pf
+b><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb><c:/texli
+ve/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb><c:/texlive/2024/tex
+mf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><c:/texlive/2024/texmf-dist/f
+onts/type1/public/amsfonts/cm/cmsy8.pfb><c:/texlive/2024/texmf-dist/fonts/type1
+/public/amsfonts/cm/cmti8.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/am
+sfonts/cm/cmtt10.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm
+/cmtt9.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb
+>
+Output written on main.pdf (5 pages, 378439 bytes).
 PDF statistics:
- 199 PDF objects out of 1000 (max. 8388607)
- 168 compressed objects within 2 object streams
- 77 named destinations out of 1000 (max. 500000)
- 65 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 264 PDF objects out of 1000 (max. 8388607)
+ 212 compressed objects within 3 object streams
+ 90 named destinations out of 1000 (max. 500000)
+ 114 words of extra memory for PDF output out of 10000 (max. 10000000)
 
