@@ -59,9 +59,6 @@ Indeed, the CPU time\footnote{CPU time is the total time the CPU actually execut
 \newpage
 
 \subsection{Effect of Reducers on Performance}
-The following image (Fig.~7) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse. 
-
-For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability.
 
 \begin{figure}[H]
 	\centering
@@ -70,12 +67,22 @@ For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in
 	\label{fig:reducer-execution-time}
 \end{figure}
 
+\vspace{-5.3mm}
+
+The image above (Fig.~7) shows the impact of varying the number of reducers on the execution time of the Hadoop application.
+As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer increase has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. It is evident that using a \textbf{single reducer} yields the \textbf{worst performance} across all input sizes. This is likely due to the single reducer becoming a \textbf{bottleneck}, limiting the degree of parallelism and slowing down the entire process. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse. The \texttt{2}- and \texttt{4}-reducer configurations exhibit \textbf{comparable performance} overall. Specifically, the \texttt{2-reducer} setup performs better with \textbf{smaller datasets}, while the \texttt{4-reducer} configuration becomes more efficient as the dataset size increases, likely due to its \textbf{better scalability} with larger workloads.
+
+
 \begin{figure}[H]
 	\centering
 	\includegraphics[width=0.5\textwidth]{images/Fig_Reducers_Aggregate_Resource_Allocation.png}
 	\caption{Reducers Aggregate Resource Allocation}
 	\label{fig:reducer-aggregate-resource-allocation}
 \end{figure}
+
+For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability. The only exception occurs at the \texttt{1024MB} input size, likely due to a significant difference in execution time between the \texttt{2-reducer} and \texttt{4-reducer} configurations. 
+
+
 
 \subsection{Final Considerations}
 The comprehensive evaluation across execution time, memory usage and shuffle volume shows that no single implementation universally dominates every metric, but trade‑offs emerge clearly. \texttt{Hadoop-noimc} suffers from both high CPU time (1154.49\,s) and poor scalability, while \texttt{Spark-RDD} achieves the lowest CPU time (82.59\,s) at the expense of excessive shuffle bytes and aggregate resource allocation (12745.41\,MB\,$\cdot$\,s on average). \texttt{Hadoop-imc} improves over \texttt{Hadoop-noimc} by reducing both execution time and memory footprint, yet still lags behind the Spark-based approaches for large datasets.

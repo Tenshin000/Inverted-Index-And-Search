@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  17 JUN 2025 15:52
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.10.9)  17 JUN 2025 22:35
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -588,10 +588,10 @@ on.png> <./images/Fig_Shuffle.png>]
 File: images/Fig_Reducers_Execution_Time.png Graphic file (type png)
 <use images/Fig_Reducers_Execution_Time.png>
 Package pdftex.def Info: images/Fig_Reducers_Execution_Time.png  used on input 
-line 68.
+line 65.
 (pdftex.def)             Requested size: 226.48395pt x 141.54898pt.
 
-Overfull \hbox (5.0pt too wide) in paragraph at lines 68--69
+Overfull \hbox (5.0pt too wide) in paragraph at lines 65--66
  [][] 
  []
 
@@ -601,14 +601,17 @@ File: images/Fig_Reducers_Aggregate_Resource_Allocation.png Graphic file (type
 png)
 <use images/Fig_Reducers_Aggregate_Resource_Allocation.png>
 Package pdftex.def Info: images/Fig_Reducers_Aggregate_Resource_Allocation.png 
- used on input line 75.
+ used on input line 78.
 (pdftex.def)             Requested size: 226.48395pt x 141.54898pt.
 
-Overfull \hbox (5.0pt too wide) in paragraph at lines 75--76
+Overfull \hbox (5.0pt too wide) in paragraph at lines 78--79
  [][] 
  []
 
 )
+Overfull \vbox (11.9139pt too high) has occurred while \output is active []
+
+
 
 [5 <./images/Fig_Reducers_Execution_Time.png> <./images/Fig_Reducers_Aggregate_
 Resource_Allocation.png>] (./main.aux)
@@ -630,7 +633,7 @@ Here is how much of TeX's memory you used:
  36800 multiletter control sequences out of 15000+600000
  563645 words of font info for 55 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,9n,79p,1161b,1522s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,9n,79p,1338b,1522s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb><c:/tex
 live/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb><c:/texlive/2024
 /texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><c:/texlive/2024/texmf-di
@@ -646,7 +649,7 @@ onts/type1/public/amsfonts/cm/cmsy8.pfb><c:/texlive/2024/texmf-dist/fonts/type1
 sfonts/cm/cmtt10.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm
 /cmtt9.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb
 >
-Output written on main.pdf (5 pages, 377126 bytes).
+Output written on main.pdf (5 pages, 377868 bytes).
 PDF statistics:
  264 PDF objects out of 1000 (max. 8388607)
  212 compressed objects within 3 object streams
