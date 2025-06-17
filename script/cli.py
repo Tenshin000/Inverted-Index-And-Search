@@ -2,10 +2,12 @@
 import argparse
 import getpass
 import os
+import re
 
 from recover_resources import download_txt_files
 from logs_to_csv_spark import operation_spark
 from logs_to_csv_hadoop import operation_hadoop, log_hadoop_reducers
+from logs_to_csv_non_parallel import operation_non_parallel
 from plot import csv_to_plot
 from create_input_partitions import create_partitions
 
@@ -65,6 +67,21 @@ def process_reducer_logs(step, total):
     log_hadoop_reducers("../log", "../log/csv-logs/")
     print(f"[{step}/{total}] ✓ Reducer logs processed.")
 
+def process_non_parallel_logs(step_start, total, write_average=False):
+    print(f"\n=== [NON-PARALLEL] Generating CSV from logs ===")
+    for i, log_dir in enumerate(LOG_DIRS, start=0):
+        step = step_start + i
+        print(f"[{step}/{total}] ➡ Processing non-parallel logs in: {log_dir}")
+        # derive dimension from folder name
+        basename = os.path.basename(log_dir)
+        match = re.match(r"test-(\d+MB)", basename)
+        dim = match.group(1) if match else basename
+        # output CSV named log-<dim>-non-parallel.csv
+        output_csv = os.path.join("../log/csv-logs", f"log-{dim}-non-parallel.csv")
+        operation_non_parallel(log_dir, output_csv, write_average)
+        print(f"[{step}/{total}] ✓ Non-parallel CSV generated at: {output_csv}")
+    return step_start + len(LOG_DIRS)
+
 def plot_metrics(step, total):
     print(f"[{step}/{total}] ➡ Generating plots from CSV logs ...")
     csv_to_plot()
@@ -85,6 +102,8 @@ def main():
                         help="Process Spark logs into CSV for all test-* folders")
     parser.add_argument("--to-csv-hadoop", action="store_true",
                         help="Process Hadoop logs into CSV for all test-* folders")
+    parser.add_argument("--to-csv-non-parallel", action="store_true",
+                        help="Process non-parallel logs into CSV for all test-* folders")
     parser.add_argument("--plot-csv", action="store_true",
                         help="Plot CSV from logs")
     parser.add_argument("--create-partitions", action="store_true",
@@ -92,20 +111,22 @@ def main():
 
     args = parser.parse_args()
 
-    # Compute total number of selected operations
-    operations_selected = sum([
-        args.recover_resources,
-        args.recover_resources_local,
-        args.to_csv_spark,
-        args.to_csv_hadoop,
-        args.plot_csv,
-        args.create_partitions
-    ])
-    total_steps = operations_selected
+    # Calculate total steps based on selected operations
+    total_steps = 0
+    if args.recover_resources:
+        total_steps += 1
+    if args.recover_resources_local:
+        total_steps += 1
     if args.to_csv_spark:
-        total_steps += 4
+        total_steps += len(LOG_DIRS)
     if args.to_csv_hadoop:
-        total_steps += 5
+        total_steps += len(LOG_DIRS) + 1  # include reducer logs
+    if args.to_csv_non_parallel:
+        total_steps += len(LOG_DIRS)
+    if args.plot_csv:
+        total_steps += 1
+    if args.create_partitions:
+        total_steps += 1
     step_counter = 1
 
     if args.recover_resources:
@@ -123,6 +144,12 @@ def main():
         step_counter = process_hadoop_logs(step_counter, total_steps)
         process_reducer_logs(step_counter, total_steps)
         step_counter += 1
+
+    if args.to_csv_non_parallel:
+        step_counter = process_non_parallel_logs(
+            step_counter, total_steps,
+            write_average=True
+        )
 
     if args.plot_csv:
         plot_metrics(step_counter, total_steps)

@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument(
         '--limit-mb', '-l', type=int, default=None,
         help='Optional size limit in MB for total data processed')
+    parser.add_argument(
+        '--verbose', '-v', action='store_true',
+        help='Enable verbose output (file-level logging)')
+    
     return parser.parse_args()
 
 
@@ -84,7 +88,7 @@ def spimi_block_write(inverted_index, block_dir, block_id):
     return block_path
 
 
-def build_blocks(input_path, hdfs_client=None, max_bytes=None):
+def build_blocks(input_path, hdfs_client=None, max_bytes=None, verbose=False):
     """
     Read files from the input path, build partial inverted index blocks,
     flush to disk every BLOCK_SIZE files or when size limit reached.
@@ -122,7 +126,8 @@ def build_blocks(input_path, hdfs_client=None, max_bytes=None):
         else:
             size = os.path.getsize(full_path)
 
-        print(f"Reading file: {fname} ({size/1024:.2f} KB)")
+        if verbose:
+            print(f"Reading file: {fname} ({size/1024:.2f} KB)")
 
         # Enforce size limit if specified
         if max_bytes is not None and total + size > max_bytes:
@@ -241,6 +246,8 @@ def merge_blocks(block_files, output_uri, hdfs_client=None):
         # Close all file handles
         for f in files:
             f.close()
+        
+    print("\nEnding...\n\n")
 
     return out_path
 
@@ -270,7 +277,7 @@ def main():
     total_start = time.time()  # Track total execution time
 
     # Build SPIMI blocks
-    block_files, block_dir, elapsed, mem = build_blocks(input_path, client, limit_bytes)
+    block_files, block_dir, elapsed, mem = build_blocks(input_path, client, limit_bytes, verbose=args.verbose)
     print(f"Merging {len(block_files)} blocks...")
 
     # Merge blocks into final output
