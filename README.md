@@ -13,7 +13,7 @@ Hajar Makhlouf
 ## Introduction  
 Our project for the Cloud Computing course involves developing a basic search engine backend through the construction of an **Inverted Index**, a fundamental data structure in information retrieval systems such as **Google Search**. The main goal is to process a collection of text files and efficiently map each word to the files in which it appears, along with the frequency of its occurrences. Subsequently we had to analyze and compare the performance of a Java-based application using the **Hadoop** framework with that of a Python-based application using the **Spark** framework. Finally we have to build a **search query** in Python based on the inverted indexes produced.
 
-We tried to make the code as optimized as possible by doing a lot of tests to try to optimize the execution time and memory usage.
+We focused on optimizing the code by conducting extensive testing aimed at improving both execution time and memory usage.
 
 ## Equipment
 The tests were conducted on three identical virtual machines, each configured with the following hardware and software specifications:
@@ -24,7 +24,7 @@ The tests were conducted on three identical virtual machines, each configured wi
 - **Operating System**: Ubuntu 22.04.1 LTS (Jammy Jellyfish), 64-bit
 
 ## Dataset
-We selected a 1583.5 MB corpus of 2685 plaintext files from [Project Gutenberg](https://www.gutenberg.org/), covering diverse fields including philosophy, science, theology, psychology, literature and other cultural subjects, to stress and tests our indexer across a broad range of real-world texts. This variety tests the system against typical literary content as well as challenging patterns, mirroring real-world search engine demands on both natural language and specialized data. File sizes vary from 5 KB to 250 MB: most are under 1 MB (reflecting typical book chapters or short essays), 329 fall between 1 MB and 7 MB (full-length books) and one extreme outlier ("Human_Genome_Project-Chromosome_1.txt", 250 MB) contains raw nucleotide sequences. Including this genomic text deliberately exposes our inverted-index builder to vast, mostly unique tokens-mimicking workloads with high vocabulary cardinality and ensuring our system handles both common-word skew and near-unique string distributions. By including files ranging from kilobytes to megabytes, the dataset enables a rigorous evaluation of how indexing and search-query systems scale with input size.
+We selected a 1583.5 MB corpus of 2685 plaintext files from [Project Gutenberg](https://www.gutenberg.org/), covering diverse fields including philosophy, science, theology, psychology, literature and other cultural subjects, to stress and test our indexers across a broad range of real-world texts. This variety tests the system against typical literary content as well as challenging patterns, mirroring real-world search engine demands on both natural language and specialized data. File sizes vary from 5 KB to 250 MB: most are under 1 MB, 329 fall between 1 MB and 7 MB and one extreme outlier ("Human\_Genome\_Project-Chromosome\_1.txt", 250 MB) contains raw nucleotide sequences. Including this genomic text deliberately exposes our inverted-index builder to vast, mostly unique tokens-mimicking workloads with high vocabulary cardinality and ensuring our system handles both common-word skew and near-unique string distributions. By including files ranging from kilobytes to megabytes, the dataset enables a rigorous evaluation of how indexing and search-query systems scale with input size. 
 
 ## MapReduce and Hadoop code
 The system uses **MapReduce**, via the **Hadoop** framework, to process large-scale data efficiently. The Hadoop cluster is optimized for virtual machines with limited memory through customized YARN and MapReduce settings. YARN manages resources and memory (up to 5 GB per node), while MapReduce configurations allocate 2048 MB to key tasks, with JVM heaps limited ot 1536 MB.
@@ -118,7 +118,7 @@ The `TokenizerMapStateful` class accumulates word counts in memory using a data 
 
 Residual data is emitted during `cleanup()`.
 
-In contrast, the `TokenizerMapper` class—lacking in-mapper combining—directly emits key-value pairs of the form:
+In contrast, the `TokenizerMapper` class (lacking in-mapper combining) directly emits key-value pairs of the form:
 ⟨**word**, **doc-id:1**⟩
 
 The `CombinerDocCounts` class implements the Combiner logic, aggregating intermediate values by summing occurrences per document:
@@ -139,7 +139,7 @@ These are aggregated using `reduceByKey`, mapped to `(word, (docID, count))`, an
 
 `word \t filename1:count1 \t filename2:count2`
 
-However this code had poor performance, performance that we expected better from Spark. So we build another version. So a second version was implemented using Spark `DataFrames`. Spark’s **DataFrames** wrap RDDs with a schema and declarative API, letting Spark Catalyst optimizer and Tungsten execution engine apply column-level and query-plan optimizations for far better performance and memory use than raw RDDs.
+However, this code exhibited suboptimal performance, which was below our expectations for Spark. Therefore, we developed a second version implemented using Spark `DataFrames`. Spark’s **DataFrames** wrap RDDs with a schema and declarative API, letting Spark Catalyst optimizer and Tungsten execution engine apply column-level and query-plan optimizations for far better performance and memory use than raw RDDs.
 
 In the new **inverted_index_search.py**, it first loads each specified path into a unified DataFrame annotated with a filename column, gracefully skipping any unreadable files. It then applies a sequence of Spark SQL transformations: all non‐alphanumeric characters are stripped via `regexp_replace`, text is lowercased and split on whitespace and each word is exploded into its own row. Empty tokens are filtered out to ensure data quality. So we have a more optimized **tokenization**. In the next phase, the code groups by word and filename to compute per‐document term frequencies, then concatenates these as filename:count strings. A second grouping by word collects and sorts the full postings list into an array, producing one row per unique term with its complete, ordered document list. Finally the output is either written as plain text (with words and tab‐separated postings) JSON, or Parquet. This approach leverages Spark’s built‐in DataFrame optimizations and avoids manual RDD manipulations while delivering a scalable inverted index. 
 
@@ -159,8 +159,8 @@ The aggregate resource allocation graph (Aggregate Resource Plot) closely resemb
 |:------------|:--------------------:|
 | NO-IMC      |       9785.71        |
 | IMC         |       10297.36       |
-| DataFrame   |       11008.17       |
-| RDD         |       12745.41       |
+| DataFrames  |       11008.17       |
+| RDDs        |       12745.41       |
 
 <span id="tab:avg-mem" label="tab:avg-mem"></span>
 
@@ -171,8 +171,8 @@ Indeed, the CPU time[^3], relative to the 1583MB case, as shown in the following
 |:------------|:----------------:|
 | NO-IMC      |     1154.49      |
 | IMC         |      642.85      |
-| DataFrame   |      521.85      |
-| RDD         |      82.59       |
+| DataFrames  |      521.85      |
+| RDDs        |      82.59       |
 
 <span id="tab:avg-cpu-time" label="tab:avg-cpu-time"></span>
 
@@ -192,7 +192,7 @@ Indeed, the CPU time[^3], relative to the 1583MB case, as shown in the following
 </figure>
 
 ### Effect of Reducers on Performance
-The Execution Time image (Reducers Execution Time) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse.
+The following image (Reducers Execution Time) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse.
 
 For Aggregate Resource Allocation (Reducers Aggregate Resource Allocation), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability.
 
