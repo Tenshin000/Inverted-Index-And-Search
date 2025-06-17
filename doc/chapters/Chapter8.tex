@@ -15,8 +15,8 @@ The aggregate resource allocation graph (Fig.~5) closely resembles the execution
 		\hline
 		NO-IMC    & 9785.71 \\
 		IMC  & 10297.36 \\
-		DataFrame & 11008.17 \\
-		RDD       & 12745.41 \\
+		DataFrames & 11008.17 \\
+		RDDs       & 12745.41 \\
 		\hline
 	\end{tabular}
 	\label{tab:avg-mem}
@@ -31,8 +31,8 @@ Indeed, the CPU time\footnote{CPU time is the total time the CPU actually execut
 		\hline
 		NO-IMC    & 1154.49 \\
 		IMC  & 642.85 \\
-		DataFrame & 521.85 \\
-		RDD       & 82.59 \\
+		DataFrames & 521.85 \\
+		RDDs       & 82.59 \\
 		\hline
 	\end{tabular}
 	\label{tab:avg-cpu-time}
@@ -59,7 +59,7 @@ Indeed, the CPU time\footnote{CPU time is the total time the CPU actually execut
 \newpage
 
 \subsection{Effect of Reducers on Performance}
-The Execution Time image (Fig.~7) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse. 
+The following image (Fig.~7) shows the impact of varying the number of reducers on the execution time of the Hadoop application. As input size increases, the difference in performance becomes more pronounced. For small datasets (128MB, 256MB and 512MB), the reducer count has minimal impact. However, for larger datasets (1024MB and 1583MB), using more reducers generally leads to lower execution times, with the best performance observed when using 4 reducers. Interestingly, performance slightly degrades when moving from 4 to 8 reducers, likely due to overhead from task coordination and context switching. This suggests that, while increasing reducer count improves parallelism and reduces execution time up to a point, beyond that point the benefits diminish or even reverse. 
 
 For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability.
 

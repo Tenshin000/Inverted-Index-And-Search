@@ -121,7 +121,7 @@ The \texttt{TokenizerMapStateful} class accumulates word counts in memory using 
 
 Residual data is emitted during \texttt{cleanup()}.
 
-In contrast, the \texttt{TokenizerMapper} class—lacking in-mapper combining—directly emits key-value pairs of the form:
+In contrast, the \texttt{TokenizerMapper} class (lacking in-mapper combining) directly emits key-value pairs of the form:
 \[
 \langle \textbf{word}, \textbf{doc-id:1} \rangle
 \]
