@@ -12,7 +12,7 @@ Spark jobs were executed on YARN with event logging and the Spark History Server
 These are aggregated using \texttt{reduceByKey}, mapped to \texttt{(word, (docID, count))}, and grouped by key to produce sorted postings lists. Partitioning is adjusted dynamically (1 partition per 44MB) to ensure workload balance. The final output can be saved as tab-delimited text, JSON, or Parquet, generating a distributed inverted index. This is the format of the final output:
 
 \[
-\texttt{word \textbackslash t filename1:count1 \textbackslash t filename2:count2}
+\texttt{word \textbackslash t f.name1:count1 \textbackslash t f.name2:count2}
 \]
 
 However, this code exhibited suboptimal performance, which was below our expectations for Spark. Therefore, we developed a second version implemented using Spark \texttt{DataFrames}. Spark's \textbf{DataFrames} wrap RDDs with a schema and declarative API, letting Spark Catalyst optimizer and Tungsten execution engine apply column-level and query-plan optimizations for far better performance and memory use than raw RDDs. 
