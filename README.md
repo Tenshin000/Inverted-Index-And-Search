@@ -39,6 +39,59 @@ The directory `inverted-index` in HDFS contains the following subfolders:
 
 - `search`: contains the results produced by the search query system that operates on the generated inverted index.
 
+
+## How to Use the Inverted Index Automation CLI
+### Run the CLI
+In the `script` directory, execute:
+
+    python cli.py [OPTIONS]
+
+You must supply at least one option; otherwise the script exits immediately.
+
+### Available Options
+
+`--recover-resources`  
+  
+**Action:** Download all `.txt` resources from the FTP server (`ftp.blogpanattoni.altervista.org/resources`) and upload them into HDFS at `hdfs:///user/hadoop/inverted-index/data`. **Flow:** Prompts for your FTP password, fetches files, creates the HDFS directory, and uploads.
+
+`--recover-resources-local`  
+  
+**Action:** Download all `.txt` resources from the FTP server into a local `data/` folder. **Flow:** Prompts for FTP password and saves files under `./data/`.
+
+`--to-csv-spark`  
+  
+**Action:** For each log folder in `../log/test-*`, run the Spark log parser (`logs_to_csv_spark.py`) to produce one CSV of average metrics per folder. **Output:** `../log/csv-logs/log-{size}MB-spark.csv` and `log-{size}MB-rdd-spark.csv`.
+
+`--to-csv-hadoop`  
+  
+**Action:** For each `test-*` folder, run the Hadoop log parser (`logs_to_csv_hadoop.py`), then process reducer-specific logs (`log_hadoop_reducers`). **Output:** `../log/csv-logs/log-{size}MB-hadoop.csv`, `log-{size}MB-noimc-hadoop.csv`, and `log-{size}MB-reducerN.csv`.
+
+`--to-csv-non-parallel`  
+  
+**Action:** For each `test-*` folder, run the non‑parallel log parser (`logs_to_csv_non_parallel.py`) in average mode. **Output:** `../log/csv-logs/log-{size}MB-non-parallel.csv`.
+
+`--plot-csv`  
+  
+**Action:** Read all generated CSVs from `../log/csv-logs/` and produce comparative plots via `plot.py`. **Output:** PNG or PDF charts saved to the `plots/` directory.
+
+`--create-partitions`  
+  
+**Action:** Execute `create_input_partitions.py` to split the HDFS data folder into subdirectories capped at 128 MB, 256 MB, 512 MB, and 1024 MB. **Output:** New HDFS directories `data-128MB`, `data-256MB`, etc., under `/user/hadoop/inverted-index/`.
+
+### Example Workflows
+
+    # Recover into HDFS and create partitions:
+    python cli.py \
+      --recover-resources \
+      --create-partitions
+
+    # Process logs and then plot all results:
+    python cli.py \
+      --to-csv-spark \
+      --to-csv-hadoop \
+      --to-csv-non-parallel \
+      --plot-csv
+
 ## MapReduce and Hadoop code
 The system uses **MapReduce**, via the **Hadoop** framework, to process large-scale data efficiently. The Hadoop cluster is optimized for virtual machines with limited memory through customized YARN and MapReduce settings. YARN manages resources and memory (up to 5 GB per node), while MapReduce configurations allocate 2048 MB to key tasks, with JVM heaps limited ot 1536 MB.
 
