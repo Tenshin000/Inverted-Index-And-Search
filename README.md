@@ -141,7 +141,7 @@ Finally, the `DocumentCountReducer` consolidates all partial counts per word acr
 
 `word \t filename1:count1 \t filename2:count2`
 
-## How to Run the Hadoop Inverted Index Project
+## How to Run the Hadoop Inverted Index Search
 ### Compilation
 To compile the project, navigate to the `hadoop` directory (where the `pom.xml` is located) and run:
 
@@ -341,7 +341,7 @@ Save the execution log under
 ## Non‑Parallel code
 The non‑parallel Python implementation builds an inverted index on a single node using a SPIMI (Single Pass In‑Memory Indexing) approach. It parses command‑line arguments for local or HDFS input/output URIs, optional size limits, and verbosity via `argparse`. Text files are read (either from HDFS via `hdfs.InsecureClient` or from the local filesystem), normalized (punctuation and underscores replaced by spaces), tokenized, and accumulated in an in‑memory index. Every `BLOCK_SIZE` files—or when the size limit is reached—the current postings are flushed to a sorted block file in a temporary directory. After all blocks are written, a multi‑way merge using a min‑heap combines block files into a single output (written back to local or HDFS), preserving term order and aggregating postings. The script prints a concise summary of block construction time, merge time, total runtime, and memory usage.
 
-## How to Run the Non‑Parallel SPIMI Inverted Index
+## How to Run the Non‑Parallel SPIMI Inverted Index Search
 
 ### Execution
 After changing into the `non-parallel` directory (where `non‑parallel.py` resides), launch the script with:
