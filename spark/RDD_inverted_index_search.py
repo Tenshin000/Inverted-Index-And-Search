@@ -196,17 +196,6 @@ class InvertedIndexSearch:
                 if word:
                     yield ((word, docID), 1)
 
-        # For consistent ordering, sort by term (key) and also sort each list of postings by docID:
-        def sort_postings(record):
-            """
-            record: (term: String, postings_iter: Iterable[(docID, count)])
-            returns (term, List[(docID, count)] sorted by docID string)
-            """
-            term, postings_iter = record
-            postings_list = list(postings_iter)
-            postings_list.sort(key=lambda x: x[0])  # sort by docID string
-            return (term, postings_list)
-
         for path in input_paths:
             # wholeTextFiles --> RDD[(String path, String content)]
             this_rdd = self.sc.wholeTextFiles(path)
@@ -238,9 +227,6 @@ class InvertedIndexSearch:
         grouped = postings.groupByKey()
         # grouped: RDD[(term, Iterable[(docID, count)])]
 
-        # sorted_index: RDD[(term, List[(docID, count)])], with terms in ascending lex order
-        sorted_index = grouped.map(sort_postings).sortByKey()
-        
         # Depending on output_format, write out differently:
         fmt = output_format.lower()
         if fmt not in ("text", "json", "parquet"):
@@ -256,7 +242,7 @@ class InvertedIndexSearch:
                 # Join by tabs
                 return term + "\t" + "\t".join(posting_strs)
 
-            lines = sorted_index.map(to_text_line)
+            lines = grouped.map(to_text_line)
             lines.saveAsTextFile(output_path)
 
         elif fmt == "json":
@@ -269,7 +255,7 @@ class InvertedIndexSearch:
                 obj = {"word": term, "postings": arr}
                 return json.dumps(obj)
 
-            json_lines = sorted_index.map(to_json_line)
+            json_lines = grouped.map(to_json_line)
             # Just write out one JSON object per line:
             json_lines.saveAsTextFile(output_path)
 
@@ -282,7 +268,7 @@ class InvertedIndexSearch:
                 posting_rows = [Row(doc=doc, count=cnt) for (doc, cnt) in postings_list]
                 return Row(word=term, postings=posting_rows)
 
-            rows_rdd = sorted_index.map(to_row)
+            rows_rdd = grouped.map(to_row)
             df = self.spark.createDataFrame(rows_rdd)
             # Write out in Parquet format
             df.write.mode("overwrite").parquet(output_path)
@@ -296,7 +282,7 @@ class InvertedIndexSearch:
                 # Join by tabs
                 return term + "\t" + "\t".join(posting_strs)
 
-            lines = sorted_index.map(to_text_line)
+            lines = grouped.map(to_text_line)
             lines.saveAsTextFile(output_path)
 
     # ----------------------------#

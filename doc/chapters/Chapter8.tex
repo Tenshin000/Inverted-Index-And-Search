@@ -5,8 +5,8 @@ For the performance evaluation, four versions of the MapReduce implementation we
 \texttt{Hadoop-noimc}\footnote{IMC stands for \textit{in-mapper combining}}, 
 \texttt{Hadoop-imc}, \texttt{Spark-Dataframe} and \texttt{Spark-RDD}. Three metrics were used: \textbf{Execution time}, \textbf{Aggregate resource allocation}\footnote{Aggregate resource allocation shows the total amount of primary memory occupied by the application over time [MB$\cdot$s].} and \textbf{Shuffle bytes}. The comparison was conducted using datasets of: 
 \texttt{128MB}, \texttt{256MB}, \texttt{512MB}, \texttt{1024MB}, and \texttt{1583MB}.\\
-From the execution time histograms (Fig.~4) it's clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Hadoop-imc combining and Spark-dataframe for small datasets. However, when increasing the dataset, it becomes even worse than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. \textbf{Non-Parallel Execution}, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.\\
-The aggregate resource allocation graph (Fig.~5) closely resembles the execution time graph. This is because aggregate memory usage is strongly correlated with execution time. However, it is also evident that, for the same execution time, Spark programs use more memory than Hadoop ones. This confirms that Spark relies more heavily on in-memory processing, whereas Hadoop performs more disk-based I/O operations. Dividing average aggregate resource allocation by average execution-time, we can obtain average resource allocation. From the following table, relative to the 1583MB case, it is also clearer that the Spark versions exploit more RAM than the Hadoop ones.
+From the execution time histograms (Fig.~4) it's clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Spark-dataframe for small datasets. However, when increasing the dataset, it becomes worse than Spark-dataframe, but a little better than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. \textbf{Non-Parallel Execution}, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.\\
+The aggregate resource allocation graph (Fig.~5) shows the total memory‐time product (MB·s) for each inverse‐index implementation across input sizes. All methods scale roughly linearly, but Hadoop with in‐mapper combining remains the most efficient. The close alignment of memory‐time and execution‐time trends confirms that memory allocation drives runtime. At equivalent runtimes, Spark variants allocate substantially more memory than Hadoop with in‐mapper combining, underscoring Spark's in‐memory emphasis versus Hadoop's disk‐oriented design. Normalizing by execution time further highlights Spark’s higher average RAM usage at large scale. 
 \begin{table}[H]
 	\centering
 	\begin{tabular}{lc}
@@ -16,12 +16,12 @@ The aggregate resource allocation graph (Fig.~5) closely resembles the execution
 		NO-IMC    & 9785.71 \\
 		IMC  & 10297.36 \\
 		DataFrames & 11008.17 \\
-		RDDs       & 12745.41 \\
+		RDDs       & 9023.89 \\
 		\hline
 	\end{tabular}
 	\label{tab:avg-mem}
 \end{table}
-The last histograms (Fig.~6) are dedicated to shuffle bytes: the amount of MB received by reducers. For small datasets the result is pretty much the same for every version of the application. Starting from 512 MB the shuffle bytes of the RDD version increase significantly until they are extremely more in the version with 1583MB. This is due to the fact that a lot of \textbf{wide transformation} are used, such as: \texttt{repartition} (used to load balancing data), \texttt{groupByKey}, \texttt{reduceByKey} and \texttt{sortyByKey}.\\
+The last histograms (Fig.~6) are dedicated to shuffle bytes: the amount of MB received by reducers. For small datasets the result is pretty much the same for every version of the application. Starting from 1024 MB the shuffle bytes of the RDD version increase significantly until they are extremely more in the version with 1583MB. This is due to the fact that a lot of \textbf{wide transformation} are used, such as: \texttt{repartition} (used to load balancing data), \texttt{groupByKey} and \texttt{reduceByKey}.\\
 Indeed, the CPU time\footnote{CPU time is the total time the CPU actually executed instructions from a process, summed across all cores used.}, relative to the 1583MB case, as shown in the following table, is very low in the RDD-version, due to high number of I/O operations resulting from wide transformations. It is also evident that the CPU time is very high in Hadoop-noimc, the main reason behind this is the high amount of \texttt{emit()} called in the map phase.
 \begin{table}[H]
 	\centering
@@ -32,7 +32,7 @@ Indeed, the CPU time\footnote{CPU time is the total time the CPU actually execut
 		NO-IMC    & 1154.49 \\
 		IMC  & 642.85 \\
 		DataFrames & 521.85 \\
-		RDDs       & 82.59 \\
+		RDDs       & 39.59 \\
 		\hline
 	\end{tabular}
 	\label{tab:avg-cpu-time}
@@ -81,7 +81,6 @@ As input size increases, the difference in performance becomes more pronounced. 
 \end{figure}
 
 For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability. The only exception occurs at the \texttt{1024MB} input size, likely due to a significant difference in execution time between the \texttt{2-reducer} and \texttt{4-reducer} configurations. 
-
 
 
 \subsection{Final Considerations}
