@@ -318,7 +318,7 @@ Save the log file under `hdfs:///user/hadoop/<subdir>/`. Default: `inverted-inde
 
 ### Example Usage
 
-    spark-submit --master RDD_yarn inverted_index_search.py \
+    spark-submit --master yarn RDD_inverted_index_search.py \
       --num-partitions 10 \
       --input-folder inverted-index/data-512MB \
       --output inverted-index/search \
