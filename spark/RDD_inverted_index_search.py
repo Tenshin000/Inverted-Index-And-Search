@@ -214,6 +214,7 @@ class InvertedIndexSearch:
                 rdd = this_rdd
             else:
                 rdd = rdd.union(this_rdd)
+        
         rdd = rdd.repartition(self.num_partitions)
 
         # If no files matched (e.g. input_paths was empty), we just return early:
@@ -223,13 +224,14 @@ class InvertedIndexSearch:
             return
 
         # flatMap -> ((term, docID), 1)
-        token_pairs = rdd.flatMap(tokenize_file)
-
+        # Allows one-to-many correspondence.
+        token_pairs = rdd.flatMap(tokenize_file) # It transforms each element into a sequence of elements and then "flattens" them into a single RDD. 
+                                                 
         # Sum up counts per (term,docID): reduceByKey(+) -> ((term, docID), count)
         counts = token_pairs.reduceByKey(lambda a, b: a + b, self.num_partitions)
 
         # Now transform to (term, (docID, count)) and group by term
-        postings = counts.map(lambda kv: (kv[0][0], (kv[0][1], kv[1])))
+        postings = counts.map(lambda kv: (kv[0][0], (kv[0][1], kv[1]))) # Maintains one-to-one correspondence. (single RDD)
         # postings: RDD[(term, (docID, count))]
 
         # Group all (docID, count) pairs per term:
@@ -238,7 +240,6 @@ class InvertedIndexSearch:
 
         # sorted_index: RDD[(term, List[(docID, count)])], with terms in ascending lex order
         sorted_index = grouped.map(sort_postings).sortByKey()
-        # sorted_index = sorted_index.cache()
         
         # Depending on output_format, write out differently:
         fmt = output_format.lower()

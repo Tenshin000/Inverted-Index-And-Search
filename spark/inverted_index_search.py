@@ -188,8 +188,8 @@ class InvertedIndexSearch:
         tokens = (
             df.withColumn(
                 "word",
-                explode(
-                    split(
+                explode( # Expands each sentence into as many lines as there are words
+                    split( # Divide the text into words
                         lower(regexp_replace(col("value"), r"[^\p{L}0-9\\s]", " ")),
                         "\\s+",
                     )
@@ -199,7 +199,7 @@ class InvertedIndexSearch:
         )
 
         # Phase 2: Counts and Postings (Reduce-like)
-        counts = tokens.groupBy("word", "filename").count()
+        counts = tokens.groupBy("word", "filename").count() # "value" column is automatically eliminated
         postings = (
             counts.select(
                 col("word"), concat(col("filename"), lit(":"), col("count")).alias("posting")
