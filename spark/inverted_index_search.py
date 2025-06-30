@@ -196,10 +196,11 @@ class InvertedIndexSearch:
                 ),
             )
             .filter(col("word") != "")
+            .drop("value")
         )
 
         # Phase 2: Counts and Postings (Reduce-like)
-        counts = tokens.groupBy("word", "filename").count() # "value" column is automatically eliminated
+        counts = tokens.groupBy("word", "filename").count()
         postings = (
             counts.select(
                 col("word"), concat(col("filename"), lit(":"), col("count")).alias("posting")
