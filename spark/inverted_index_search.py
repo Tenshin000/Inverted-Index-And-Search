@@ -5,6 +5,7 @@ import psutil
 import requests
 import sys
 import time
+
 from pyspark import SparkConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import input_file_name, explode, split, lower, regexp_replace, regexp_extract, col, concat_ws, collect_list, concat, lit, sort_array
@@ -196,11 +197,10 @@ class InvertedIndexSearch:
                 ),
             )
             .filter(col("word") != "")
-            .drop("value")
         )
 
         # Phase 2: Counts and Postings (Reduce-like)
-        counts = tokens.groupBy("word", "filename").count()
+        counts = tokens.groupBy("word", "filename").count() # "value" column is automatically eliminated
         postings = (
             counts.select(
                 col("word"), concat(col("filename"), lit(":"), col("count")).alias("posting")

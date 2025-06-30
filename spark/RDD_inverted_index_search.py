@@ -2,13 +2,13 @@ import argparse
 import json
 import logging
 import os
-from os.path import basename
 import psutil
 import re
 import requests
 import sys
 import time
 
+from os.path import basename
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql import Row
@@ -161,6 +161,7 @@ class InvertedIndexSearch:
         # We accumulate them via union(...) so that arbitrary lists of files / directories work.
 
         rdd = None
+        TOKENIZER_RE = re.compile(r"[^\w\s]|_")
 
         if self.num_partitions is None:
             total_input_bytes = 0
@@ -188,7 +189,7 @@ class InvertedIndexSearch:
             docID = basename(fullpath)
 
             # Let's convert everything to lowercase and replace non-alphanumeric characters/spaces with space
-            cleaned = re.sub(r"[^\w\s]|_", " ", text.lower())
+            cleaned = TOKENIZER_RE.sub(" ", text.lower())
 
             # Now we can split on spaces to get the words
             for word in cleaned.split():

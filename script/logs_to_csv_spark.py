@@ -26,7 +26,7 @@ def process_file_log(directory, prefix_filter=None):
             continue
 
         filepath = os.path.join(directory, filename)
-        with open(filepath, 'r', encoding='utf-16') as f:
+        with open(filepath, 'r', encoding='latin1') as f:
             execution_time = None
             aggregate_resource_allocation = None
             shuffle_write = None
