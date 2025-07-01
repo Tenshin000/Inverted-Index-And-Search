@@ -5,6 +5,7 @@ import os
 import psutil
 import re
 import requests
+import socket
 import sys
 import time
 
@@ -50,16 +51,22 @@ class InvertedIndexSearch:
     # ----------------------------#
     #       Standard Methods      #
     # ----------------------------#
-    def __init__(self, app_name="SparkInvertedIndexSearchRDD", num_partitions=None):
+    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None):
         """Configure Spark and initialize SparkSession."""
+        driver_hostname = socket.gethostname()
+
         conf = (
             SparkConf()
             .setAppName(app_name)
+            .set("spark.ui.enabled","true")
+            .set("spark.driver.bindAddress", "0.0.0.0")
+            .set("spark.driver.host", driver_hostname)
         )
         self.spark = SparkSession.builder.config(conf=conf).getOrCreate()
         self.sc = self.spark.sparkContext
         self.num_partitions = num_partitions if num_partitions is not None else None
         printer.info("Spark Inverted Index Application Started ...")
+
 
     def stop(self):
         """Stop the Spark session."""
@@ -297,17 +304,25 @@ class InvertedIndexSearch:
             printer.info(message)
             log_lines.append(message)
 
-        # Compute output size on HDFS
-        output_size_bytes = self.get_hdfs_dir_size(output_path)
-        output_size_mb = output_size_bytes / (1024 ** 2)
+        try:
+            # Compute output size on HDFS
+            output_size_bytes = self.get_hdfs_dir_size(output_path)
+            output_size_mb = output_size_bytes / (1024 ** 2)
+        except Exception as e:
+            log_and_store(f"Error getting HDFS output size: {e}")
+            output_size_mb = 0
 
-        # Driver metrics via psutil
-        proc = psutil.Process()
-        driver_rss_b = proc.memory_info().rss
-        driver_cpu_time = sum(proc.cpu_times())
-        disk_counters = psutil.disk_io_counters()
-        driver_disk_read_b = disk_counters.read_bytes
-        driver_disk_write_b = disk_counters.write_bytes
+        try:
+            # Driver metrics via psutil
+            proc = psutil.Process()
+            driver_rss_b = proc.memory_info().rss
+            driver_cpu_time = sum(proc.cpu_times())
+            disk_counters = psutil.disk_io_counters()
+            driver_disk_read_b = disk_counters.read_bytes
+            driver_disk_write_b = disk_counters.write_bytes
+        except Exception as e:
+            log_and_store(f"Error collecting driver metrics: {e}")
+            driver_rss_b = driver_cpu_time = driver_disk_read_b = driver_disk_write_b = 0
 
         MB = 1024 ** 2
         NS_TO_S = 1e-9
@@ -317,11 +332,15 @@ class InvertedIndexSearch:
         driver_disk_write_mb = driver_disk_write_b / MB
 
         # Fetch Spark executor metrics via Spark REST API
-        app_id = self.sc.applicationId
-        host = self.sc._conf.get("spark.driver.host")
-        port = self.sc._conf.get("spark.ui.port", "4040")
-        executors_url = f"http://{host}:{port}/api/v1/applications/{app_id}/executors?include=dead=true"
-        execs = requests.get(executors_url).json()
+        try:
+            app_id = self.sc.applicationId
+            host = self.sc._conf.get("spark.driver.host")
+            port = self.sc._conf.get("spark.ui.port", "4040")
+            executors_url = f"http://{host}:{port}/api/v1/applications/{app_id}/executors?include=dead=true"
+            execs = requests.get(executors_url).json()
+        except Exception as e:
+            log_and_store(f"Error fetching executors data: {e}")
+            execs = []
 
         executor_agg = {
             "rddBlocks": 0,
@@ -366,9 +385,6 @@ class InvertedIndexSearch:
             executor_agg["ProcessTreeOtherVMemory"] += peak.get("ProcessTreeOtherVMemory", 0)
 
         # Fetch per-task metrics from each stage
-        stages_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages"
-        stages = requests.get(stages_url).json()
-
         stage_cpu_time_ns = 0
         stage_peak_memory = 0
         stage_task_duration_ms = 0
@@ -376,21 +392,31 @@ class InvertedIndexSearch:
         stage_disk_spilled_b = 0
         peak_stage_b = 0
 
-        for stage in stages:
-            sid = stage.get("stageId")
-            attempt = stage.get("attemptId", 0)
-            task_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages/{sid}/{attempt}/taskList"
-            task_data = requests.get(task_url).json()
+        try:
+            stages_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages"
+            stages = requests.get(stages_url).json()
+        except Exception as e:
+            log_and_store(f"Error fetching stages data: {e}")
+            stages = []
 
-            for task in task_data:
-                metrics = task.get("taskMetrics", {})
-                stage_cpu_time_ns += metrics.get("executorCpuTime", 0)
-                stage_peak_memory += metrics.get("peakExecutionMemory", 0)
-                if peak_stage_b <= metrics.get("peakExecutionMemory", 0):
-                    peak_stage_b = metrics.get("peakExecutionMemory", 0)
-                stage_task_duration_ms += metrics.get("executorRunTime", 0)
-                stage_memory_spilled_b += metrics.get("memoryBytesSpilled", 0)
-                stage_disk_spilled_b += metrics.get("diskBytesSpilled", 0)
+        for stage in stages:
+            try:
+                sid = stage.get("stageId")
+                attempt = stage.get("attemptId", 0)
+                task_url = f"http://{host}:{port}/api/v1/applications/{app_id}/stages/{sid}/{attempt}/taskList"
+                task_data = requests.get(task_url).json()
+
+                for task in task_data:
+                    metrics = task.get("taskMetrics", {})
+                    stage_cpu_time_ns += metrics.get("executorCpuTime", 0)
+                    stage_peak_memory += metrics.get("peakExecutionMemory", 0)
+                    if peak_stage_b <= metrics.get("peakExecutionMemory", 0):
+                        peak_stage_b = metrics.get("peakExecutionMemory", 0)
+                    stage_task_duration_ms += metrics.get("executorRunTime", 0)
+                    stage_memory_spilled_b += metrics.get("memoryBytesSpilled", 0)
+                    stage_disk_spilled_b += metrics.get("diskBytesSpilled", 0)
+            except Exception as e:
+                log_and_store(f"Error fetching task data for stage {sid}: {e}")
 
         # Compute aggregated memory snapshots
         physical_mem_snapshot_mb = (
@@ -458,11 +484,14 @@ class InvertedIndexSearch:
         # Prepare log file name
         log_name = f"log-{os.path.basename(output_path)}"
 
-        # Write the log to HDFS
-        df = self.spark.createDataFrame([(l,) for l in log_lines], ["log"])
-        hdfs_log_path = os.path.join(log_dir.rstrip("/"), log_name)
-        df.coalesce(1).write.mode("overwrite").text(hdfs_log_path)
-        printer.info(f"Log saved to HDFS path: {hdfs_log_path}")   
+        try:
+            # Write the log to HDFS
+            df = self.spark.createDataFrame([(l,) for l in log_lines], ["log"])
+            hdfs_log_path = os.path.join(log_dir.rstrip("/"), log_name)
+            df.coalesce(1).write.mode("overwrite").text(hdfs_log_path)
+            printer.info(f"Log saved to HDFS path: {hdfs_log_path}")
+        except Exception as e:
+            log_and_store(f"Error writing log to HDFS: {e}")
 
 
 # ----------------------------#
