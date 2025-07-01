@@ -51,7 +51,7 @@ class InvertedIndexSearch:
     # ----------------------------#
     #       Standard Methods      #
     # ----------------------------#
-    def __init__(self, app_name="SparkInvertedIndexSearch", num_partitions=None):
+    def __init__(self, app_name="RDDSparkInvertedIndexSearch", num_partitions=None):
         """Configure Spark and initialize SparkSession."""
         driver_hostname = socket.gethostname()
 
