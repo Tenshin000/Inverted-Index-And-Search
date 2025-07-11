@@ -16,7 +16,7 @@ The aggregate resource allocation graph (Fig.~5) shows the total memory‐time p
 		NO-IMC    & 9785.71 \\
 		IMC  & 10297.36 \\
 		DataFrames & 11008.17 \\
-		RDDs       & 8520.53 \\
+		RDDs       & 10773.62 \\
 		\hline
 	\end{tabular}
 	\label{tab:avg-mem}
@@ -84,7 +84,7 @@ For Aggregate Resource Allocation (Fig.~8), despite some small irregularities in
 
 
 \subsection{Final Considerations}
-The comprehensive evaluation across execution time, memory usage and shuffle volume shows that no single implementation universally dominates every metric, but trade‑offs emerge clearly. \texttt{Hadoop-noimc} suffers from both high CPU time (1154.49\,s) and poor scalability, while \texttt{Spark-RDD} achieves the lowest CPU time (82.59\,s) at the expense of excessive shuffle bytes and aggregate resource allocation (3561005.96\,MB\,$\cdot$\,s on average). \texttt{Hadoop-imc} improves over \texttt{Hadoop-noimc} by reducing both execution time and memory footprint, yet still lags behind the Spark-based approaches for large datasets.
+The comprehensive evaluation across execution time, memory usage and shuffle volume shows that no single implementation universally dominates every metric, but trade‑offs emerge clearly. \texttt{Hadoop-noimc} suffers from both high CPU time (1154.49\,s) and poor scalability, while \texttt{Spark-RDD} achieves the lowest CPU time (42.89\,s) at the expense of excessive shuffle bytes and aggregate resource allocation (3561005.96\,MB\,$\cdot$\,s on average). \texttt{Hadoop-imc} improves over \texttt{Hadoop-noimc} by reducing both execution time and memory footprint, yet still lags behind the Spark-based approaches for large datasets.
 
 \texttt{Spark with Dataframes} consistently delivers near‑optimal execution times while keeping both aggregate resource allocation (2637719.31\,MB\,$\cdot$\,s) and shuffle volume moderate. This balance of low execution latency, controlled memory consumption and efficient shuffling makes the DataFrame API the best choice for large‑scale word‑count workloads on our cluster. Furthermore, tuning the reducer count to four provides additional speedup in Hadoop jobs, but does not bridge the gap to Spark’s in‑memory processing advantages.
 
