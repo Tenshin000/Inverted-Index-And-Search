@@ -499,7 +499,7 @@ For the performance evaluation, four versions of the MapReduce implementation we
 <figcaption>Execution Time Plot</figcaption>
 </figure>
 
-From the execution time histograms (Execution Time Plot) it’s clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Hadoop-imc combining and Spark-dataframe for small datasets. However, when increasing the dataset, it becomes even worse than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. **Non-Parallel Execution**, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.  
+From the execution time histograms (Execution Time Plot) it’s clear that Hadoop-noimc combiner performs poorly on both small and large datasets. Spark-RDD, instead, turns out to have comparable results to Spark-Dataframe for small datasets. However, when increasing the dataset, it becomes worse than Spark-Dataframe, but a little better than Hadoop-noimc. The execution time of Hadoop-imc and Spark-Dataframe is comparable for each input size. \textbf{Non-Parallel Execution}, on the other hand, consistently shows the worst performance as dataset size grows, clearly highlighting the benefits of distributed computing for large-scale data processing.   
 
 <figure id="fig:aggregate-resource-allocation">
 <img src="doc/images/Fig_Aggregate_Resource_Allocation.png" style="width:44.4%" />
@@ -513,7 +513,7 @@ The aggregate resource allocation graph (Aggregate Resource Plot) closely resemb
 | NO-IMC      |       9785.71        |
 | IMC         |       10297.36       |
 | DataFrames  |       11008.17       |
-| RDDs        |       12745.41       |
+| RDDs        |       10773.62       |
 
 <span id="tab:avg-mem" label="tab:avg-mem"></span>
 
@@ -530,7 +530,7 @@ Indeed, the CPU time[^3], relative to the 1583MB case, as shown in the following
 | NO-IMC      |     1154.49      |
 | IMC         |      642.85      |
 | DataFrames  |      521.85      |
-| RDDs        |      82.59       |
+| RDDs        |      42.89       |
 
 ### Effect of Reducers on Performance
 <figure id="fig:reducer-execution-time">
@@ -547,9 +547,9 @@ The image above (Reducers Execution Time) shows the impact of varying the number
 For Aggregate Resource Allocation (Reducers Aggregate Resource Allocation), despite some small irregularities in the graph, it is easy to see that there is a pattern: it increases as the number of reducers increases. This behavior is expected, as increasing the number of reducers leads to more concurrent tasks executing in parallel, each requiring its own memory space. As a result, the total memory footprint of the application increases with the number of reducers. Although this allows for better task distribution and reduced execution time, it comes at the cost of higher memory consumption. Therefore, there is a trade-off between parallelism and resource utilization, and selecting the optimal number of reducers involves balancing execution efficiency with memory availability. The `2`- and `4`-reducer configurations exhibit **comparable performance** overall. Specifically, the `2-reducer` setup performs better with **smaller datasets**, while the `4-reducer` configuration becomes more efficient as the dataset size increases, likely due to its **better scalability** with larger workloads. 
 
 ### Final Considerations
-The comprehensive evaluation across execution time, memory usage and shuffle volume shows that no single implementation universally dominates every metric, but trade‑offs emerge clearly. `Hadoop-noimc` suffers from both high CPU time (1154.49 s) and poor scalability, while `Spark-RDD` achieves the lowest CPU time (82.59 s) at the expense of excessive shuffle bytes and aggregate resource allocation (12745.41 MB ⋅ s on average). `Hadoop-imc` improves over `Hadoop-noimc` by reducing both execution time and memory footprint, yet still lags behind the Spark-based approaches for large datasets.
+The comprehensive evaluation across execution time, memory usage and shuffle volume shows that no single implementation universally dominates every metric, but trade‑offs emerge clearly. `Hadoop-noimc` suffers from both high CPU time (1154.49 s) and poor scalability, while `Spark-RDD` achieves the lowest CPU time (42.89 s) at the expense of excessive shuffle bytes and aggregate resource allocation (3561005.96 MB ⋅ s on average). `Hadoop-imc` improves over `Hadoop-noimc` by reducing both execution time and memory footprint, yet still lags behind the Spark-based approaches for large datasets.
 
-`Spark with Dataframes` consistently delivers near‑optimal execution times while keeping both aggregate resource allocation (11008.17 MB ⋅ s) and shuffle volume moderate. This balance of low execution latency, controlled memory consumption and efficient shuffling makes the DataFrame API the best choice for large‑scale word‑count workloads on our cluster. Furthermore, tuning the reducer count to four provides additional speedup in Hadoop jobs, but does not bridge the gap to Spark’s in‑memory processing advantages.
+`Spark with Dataframes` consistently delivers near‑optimal execution times while keeping both aggregate resource allocation (2637719.31 MB ⋅ s) and shuffle volume moderate. This balance of low execution latency, controlled memory consumption and efficient shuffling makes the DataFrame API the best choice for large‑scale word‑count workloads on our cluster. Furthermore, tuning the reducer count to four provides additional speedup in Hadoop jobs, but does not bridge the gap to Spark’s in‑memory processing advantages.
 
 In conclusion, for batch analytics on medium to large datasets, `Spark with Dataframe` offers the strongest overall performance profile. However, if minimizing memory usage is paramount and data volumes remain moderate, `Hadoop with In-Mapper Combining` remains a viable alternative.
 
