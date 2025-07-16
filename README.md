@@ -10,6 +10,8 @@ Francesco Panattoni,
 Lorenzo Vezzani,
 Hajar Makhlouf
 
+*This is a copy of the original project that is in: "https://github.com/lorenzo-vezzani/inverted-index-and-search/tree/main". This project had a final score of 30 (maximum score).*
+
 ## Introduction  
 Our project for the Cloud Computing course involves developing a basic search engine backend through the construction of an **Inverted Index**, a fundamental data structure in information retrieval systems such as **Google Search**. The main goal is to process a collection of text files and efficiently map each word to the files in which it appears, along with the frequency of its occurrences. Subsequently we had to analyze and compare the performance of a Java-based application using the **Hadoop** framework with that of a Python-based application using the **Spark** framework. Finally we have to build a **search query** in Python based on the inverted indexes produced.
 
